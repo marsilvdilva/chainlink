@@ -53,6 +53,7 @@ type SuiSendRequest struct {
 	FeeTokenStore    string
 	TokenAmounts     []SuiTokenAmount
 	TokenReceiverATA []byte
+	FeeTokenMetadata string
 }
 
 type SuiTokenAmount struct {
