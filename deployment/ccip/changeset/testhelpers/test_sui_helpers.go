@@ -372,7 +372,7 @@ func SendSuiCCIPRequest(e cldf.Environment, cfg *ccipclient.CCIPSendReqConfig) (
 
 		lockOrBurnParamsCall, err := tokenPoolContract.EncodeCallArgsWithGenerics(
 			"lock_or_burn",
-			typeArgsListLinkTokenPkgID,
+			typeArgsListMINTEDTOKENTOSENDPkgID,
 			typeParamsList,
 			paramTypesLockBurn,
 			paramValuesLockBurn,
