@@ -40,7 +40,6 @@ message MessageBody {
   uint32 capability_don_id = 15;
   uint32 caller_don_id = 16;
   string capability_method = 17; // method name defined by the capability (empty for legacy "v1" calls)
-  bool firstRegistration = 18;
 }
 
 message TriggerRegistrationMetadata {

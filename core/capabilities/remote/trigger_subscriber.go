@@ -60,8 +60,8 @@ type triggerEventKey struct {
 
 type subRegState struct {
 	callback   chan commoncap.TriggerResponse
-	rawRequest []byte
-	pendingResponseChan chan error
+	rawRequest                      []byte
+	initialRegistrationResponseChan chan error
 }
 
 type TriggerSubscriber interface {
@@ -159,15 +159,17 @@ func (s *triggerSubscriber) RegisterTrigger(ctx context.Context, request commonc
 	s.lggr.Infow("RegisterTrigger called", "donId", cfg.capDonInfo.ID, "workflowID", request.Metadata.WorkflowID)
 	regState, ok := s.registeredWorkflows[request.Metadata.WorkflowID]
 
-	var pendingResponseChan chan error
+	var initialRegistrationResponseChan chan error
 	if !ok {
-		pendingResponseChan = make(chan error, 1)
+		initialRegistrationResponseChan = make(chan error, 1)
 		regState = &subRegState{
-			callback:   make(chan commoncap.TriggerResponse, sendChannelBufferSize),
-			rawRequest: rawRequest,
-			firstRegistration: true,
-			pendingResponseChan: pendingResponseChan,
+			callback:                        make(chan commoncap.TriggerResponse, sendChannelBufferSize),
+			rawRequest:                      rawRequest,
+			initialRegistrationResponseChan: initialRegistrationResponseChan,
 		}
+
+		// instead of the below communicating what is and is not registered, lets use a channel to send registration and unregistration requests
+		// that are processed in the registration loop - through this doesn't solve the problem of pulling back the response channel on message receipt
 		s.registeredWorkflows[request.Metadata.WorkflowID] = regState
 	} else {
 		regState.rawRequest = rawRequest
@@ -175,7 +177,7 @@ func (s *triggerSubscriber) RegisterTrigger(ctx context.Context, request commonc
 	}
 	s.mu.Unlock()
 
-	if pendingResponseChan != nil {
+	if initialRegistrationResponseChan != nil {
 		ctxWithTimeout, cancel := context.WithTimeout(ctx, registrationResponseTimeout)
 		defer cancel()
 
@@ -184,7 +186,7 @@ func (s *triggerSubscriber) RegisterTrigger(ctx context.Context, request commonc
 			return nil, errors.New("trigger subscriber is stopping")
 		case <-ctxWithTimeout.Done():
 			return nil, ctx.Err()
-		case err = <-pendingResponseChan:
+		case err = <-initialRegistrationResponseChan:
 			if err != nil {
 				return nil, err
 			}
@@ -226,6 +228,9 @@ func (s *triggerSubscriber) registrationLoop() {
 				firstRegistration := false
 				if registration.firstRegistration {
 					// TODO this needs to be thread safe
+
+					why need to know first registration?  cannot just clone the channel associated with the registration, but how to know if its been used?
+					perhaps encapsulate the pending response channel to be thread safe with a closed flag?
 
 					firstRegistration = true
 					registration.firstRegistration = false
@@ -351,19 +356,28 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 				}
 			}
 
-			s.
-
 			if noErrorCount >= (s.cfg.Load().capDonInfo.F + 1) {
 				// Successful registration
 				s.lggr.Infow("successful trigger registration", "triggerID", meta.TriggerId, "sender", sender)
+				s.registeredWorkflows[meta.TriggerId].initialRegistrationResponseChan <- nil
 			} else {
 				// Registration failed - log all errors
 				for errStr, count := range errorToCount {
+
+					so - the problem with the below is its not thread safe as we are not locking around the registeredWorkflows map
+
+					if count >= int(s.cfg.Load().capDonInfo.F + 1) {
+						// Majority error - return this error
+						s.lggr.Errorw("trigger registration failed with majority error", "triggerID", meta.TriggerId, "sender", sender, "error", errStr, "count", count)
+						s.registeredWorkflows[meta.TriggerId].initialRegistrationResponseChan <- errors.New(errStr)
+						return
+					}
+
 					s.lggr.Errorw("trigger registration failed", "triggerID", meta.TriggerId, "sender", sender, "error", errStr, "count", count)
 				}
 
-				/
-
+				// If there is no majority error, return a generic error
+				s.registeredWorkflows[meta.TriggerId].initialRegistrationResponseChan <- errors.New("trigger registration failed with no majority error")
 			}
 		}
 	} else {
