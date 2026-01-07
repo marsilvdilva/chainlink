@@ -31,13 +31,13 @@ type triggerSubscriber struct {
 	dispatcher    types.Dispatcher
 	cfg           atomic.Pointer[dynamicConfig]
 
-	messageCache        *messagecache.MessageCache[triggerEventKey, p2ptypes.PeerID]
-	registrationResponseCache  *messagecache.MessageCache[triggerRegistrationKey, p2ptypes.PeerID]
-	registeredWorkflows map[string]*subRegState
-	mu                  sync.RWMutex // protects registeredWorkflows and messageCache
-	stopCh              services.StopChan
-	wg                  sync.WaitGroup
-	lggr                logger.Logger
+	messageCache              *messagecache.MessageCache[triggerEventKey, p2ptypes.PeerID]
+	registrationResponseCache *messagecache.MessageCache[triggerRegistrationKey, p2ptypes.PeerID]
+	registeredWorkflows       map[string]*subRegState
+	mu                        sync.RWMutex // protects registeredWorkflows and messageCache
+	stopCh                    services.StopChan
+	wg                        sync.WaitGroup
+	lggr                      logger.Logger
 }
 
 type dynamicConfig struct {
@@ -60,7 +60,9 @@ type triggerEventKey struct {
 
 type subRegState struct {
 	callback   chan commoncap.TriggerResponse
-	rawRequest                      []byte
+	rawRequest []byte
+
+	// TODO need to clean this up after initial registration response is sent and ensure following sent responses are effectively noops and do not block
 	initialRegistrationResponseChan chan error
 }
 
@@ -87,14 +89,14 @@ const (
 
 func NewTriggerSubscriber(capabilityID string, capMethodName string, dispatcher types.Dispatcher, lggr logger.Logger) *triggerSubscriber {
 	return &triggerSubscriber{
-		capabilityID:        capabilityID,
-		capMethodName:       capMethodName,
-		dispatcher:          dispatcher,
-		messageCache:        messagecache.NewMessageCache[triggerEventKey, p2ptypes.PeerID](),
-		registrationResponseCache:  messagecache.NewMessageCache[triggerRegistrationKey, p2ptypes.PeerID](),
-		registeredWorkflows: make(map[string]*subRegState),
-		stopCh:              make(services.StopChan),
-		lggr:                logger.With(logger.Named(lggr, "TriggerSubscriber"), "capabilityID", capabilityID, "capMethodName", capMethodName),
+		capabilityID:              capabilityID,
+		capMethodName:             capMethodName,
+		dispatcher:                dispatcher,
+		messageCache:              messagecache.NewMessageCache[triggerEventKey, p2ptypes.PeerID](),
+		registrationResponseCache: messagecache.NewMessageCache[triggerRegistrationKey, p2ptypes.PeerID](),
+		registeredWorkflows:       make(map[string]*subRegState),
+		stopCh:                    make(services.StopChan),
+		lggr:                      logger.With(logger.Named(lggr, "TriggerSubscriber"), "capabilityID", capabilityID, "capMethodName", capMethodName),
 	}
 }
 
@@ -207,9 +209,6 @@ func (s *triggerSubscriber) registrationLoop() {
 		select {
 		case <-s.stopCh:
 			return
-
-		case
-			// Use a registration channel that passes in the registration along with the response channel, instead of first registration flag
 		case <-ticker.C:
 			cfg := s.cfg.Load()
 			if cfg.remoteConfig.RegistrationRefresh != tickerDuration {
@@ -224,18 +223,6 @@ func (s *triggerSubscriber) registrationLoop() {
 			}
 
 			for _, registration := range s.registeredWorkflows {
-
-				firstRegistration := false
-				if registration.firstRegistration {
-					// TODO this needs to be thread safe
-
-					why need to know first registration?  cannot just clone the channel associated with the registration, but how to know if its been used?
-					perhaps encapsulate the pending response channel to be thread safe with a closed flag?
-
-					firstRegistration = true
-					registration.firstRegistration = false
-				}
-
 				for _, peerID := range cfg.capDonInfo.Members {
 					m := &types.MessageBody{
 						CapabilityId:     cfg.capInfo.ID,
@@ -244,7 +231,6 @@ func (s *triggerSubscriber) registrationLoop() {
 						Method:           types.MethodRegisterTrigger,
 						Payload:          registration.rawRequest,
 						CapabilityMethod: s.capMethodName,
-						FirstRegistration: firstRegistration,
 					}
 					err := s.dispatcher.Send(peerID, m)
 					if err != nil {
@@ -327,6 +313,13 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 		}
 	} else if msg.Method == types.RegisterTriggerResponse {
 		meta := msg.GetTriggerRegistrationMetadata()
+		s.mu.RLock()
+		registration, found := s.registeredWorkflows[meta.WorkflowId]
+		s.mu.RUnlock()
+		if !found {
+			s.lggr.Errorw("received trigger registration response message for unregistered workflow", "workflowID", SanitizeLogString(meta.WorkflowId), "sender", sender)
+			return
+		}
 
 		key := triggerRegistrationKey{
 			triggerID: meta.TriggerId,
@@ -339,45 +332,43 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 			s.registrationResponseCache.Insert(key, sender, nowMs, nil)
 		}
 
-
 		// TODO check min responses to aggregate, is it 2f+1 ?
 		ready, responseErrors := s.registrationResponseCache.Ready(key, cfg.remoteConfig.MinResponsesToAggregate, nowMs-cfg.remoteConfig.MessageExpiry.Milliseconds(), true)
 
-		var noErrorCount uint8
 		if ready {
+			var successfulRegistrationCount uint8
+			var totalErrorCount int
+
 			// aggregate errors by message
 			errorToCount := map[string]int{}
-   			for _, responseError := range responseErrors {
+			for _, responseError := range responseErrors {
 				if len(responseError) > 0 {
 					errorStr := string(responseError)
-					errorToCount[errorStr] = errorToCount[errorStr]+1
+					errorToCount[errorStr] = errorToCount[errorStr] + 1
+					totalErrorCount++
 				} else {
-					noErrorCount++
+					successfulRegistrationCount++
 				}
 			}
 
-			if noErrorCount >= (s.cfg.Load().capDonInfo.F + 1) {
+			if successfulRegistrationCount >= (s.cfg.Load().capDonInfo.F + 1) {
 				// Successful registration
 				s.lggr.Infow("successful trigger registration", "triggerID", meta.TriggerId, "sender", sender)
 				s.registeredWorkflows[meta.TriggerId].initialRegistrationResponseChan <- nil
 			} else {
-				// Registration failed - log all errors
+				// Registration failed - send error response
+
+				// Is there a consensus error?  if so send that
 				for errStr, count := range errorToCount {
-
-					so - the problem with the below is its not thread safe as we are not locking around the registeredWorkflows map
-
-					if count >= int(s.cfg.Load().capDonInfo.F + 1) {
-						// Majority error - return this error
-						s.lggr.Errorw("trigger registration failed with majority error", "triggerID", meta.TriggerId, "sender", sender, "error", errStr, "count", count)
-						s.registeredWorkflows[meta.TriggerId].initialRegistrationResponseChan <- errors.New(errStr)
+					if count >= int(s.cfg.Load().capDonInfo.F+1) {
+						s.lggr.Errorw("trigger registration failed with error", "triggerID", meta.TriggerId, "sender", sender, "error", SanitizeLogString(errStr), "count", count)
+						registration.initialRegistrationResponseChan <- errors.New(errStr)
 						return
 					}
-
-					s.lggr.Errorw("trigger registration failed", "triggerID", meta.TriggerId, "sender", sender, "error", errStr, "count", count)
 				}
 
-				// If there is no majority error, return a generic error
-				s.registeredWorkflows[meta.TriggerId].initialRegistrationResponseChan <- errors.New("trigger registration failed with no majority error")
+				// If there is no consensus error, return a generic error
+				registration.initialRegistrationResponseChan <- fmt.Errorf("received %d errors, last error %s : %s", totalErrorCount, msg.Error, SanitizeLogString(msg.ErrorMsg))
 			}
 		}
 	} else {

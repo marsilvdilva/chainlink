@@ -24,7 +24,7 @@ func TestTriggerPublisher_Register(t *testing.T) {
 	ctx := testutils.Context(t)
 	capabilityDONID, workflowDONID := uint32(1), uint32(2)
 
-	underlyingTriggerCap, publisher, _, peers := newServices(t, capabilityDONID, workflowDONID, 1)
+	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 1)
 
 	// invalid sender case - node 0 is not a member of the workflow DON, registration shoudn't happen
 	regEvent := newRegisterTriggerMessage(t, workflowDONID, peers[0])
@@ -32,6 +32,13 @@ func TestTriggerPublisher_Register(t *testing.T) {
 	require.Empty(t, underlyingTriggerCap.registrationsCh)
 
 	// valid registration
+	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
+		require.Equal(t, peers[1], peerID)
+		require.Equal(t, capID, msgBody.CapabilityId)
+		require.Equal(t, remotetypes.Error_OK, msgBody.Error)
+		require.Equal(t, "", msgBody.ErrorMsg)
+	}).Return(nil)
+
 	regEvent = newRegisterTriggerMessage(t, workflowDONID, peers[1])
 	publisher.Receive(ctx, regEvent)
 	require.NotEmpty(t, underlyingTriggerCap.registrationsCh)

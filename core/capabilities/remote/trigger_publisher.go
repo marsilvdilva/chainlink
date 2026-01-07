@@ -10,10 +10,10 @@ import (
 	"time"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/trigger"
 
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/aggregation"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/messagecache"
@@ -35,7 +35,7 @@ type triggerPublisher struct {
 	cfg           atomic.Pointer[dynamicPublisherConfig]
 
 	messageCache  *messagecache.MessageCache[registrationKey, p2ptypes.PeerID]
-	registrations map[registrationKey]*pubRegState
+	registrations map[registrationKey]*trigger.PublisherRegistration
 	mu            sync.RWMutex // protects messageCache and registrations
 	batchingQueue map[[32]byte]*batchedResponse
 	bqMu          sync.Mutex // protects batchingQueue
@@ -56,12 +56,6 @@ type dynamicPublisherConfig struct {
 type registrationKey struct {
 	callerDonID uint32
 	workflowID  string
-}
-
-type pubRegState struct {
-	callback <-chan commoncap.TriggerResponse
-	request  commoncap.TriggerRegistrationRequest
-	cancel   context.CancelFunc
 }
 
 type batchedResponse struct {
@@ -87,7 +81,7 @@ func NewTriggerPublisher(capabilityID string, capMethodName string, dispatcher t
 		capMethodName: capMethodName,
 		dispatcher:    dispatcher,
 		messageCache:  messagecache.NewMessageCache[registrationKey, p2ptypes.PeerID](),
-		registrations: make(map[registrationKey]*pubRegState),
+		registrations: make(map[registrationKey]*trigger.PublisherRegistration),
 		batchingQueue: make(map[[32]byte]*batchedResponse),
 		stopCh:        make(services.StopChan),
 		lggr:          logger.With(logger.Named(lggr, "TriggerPublisher"), "capabilityID", capabilityID, "capMethodName", capMethodName),
@@ -205,12 +199,17 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 		nowMs := time.Now().UnixMilli()
 		p.mu.Lock()
 		defer p.mu.Unlock()
+
+		// TODO a single rogue node could keep a trigger registration alive
 		p.messageCache.Insert(key, sender, nowMs, msg.Payload)
-		_, exists := p.registrations[key]
-		if exists {
-			p.lggr.Debugw("trigger registration already exists", "workflowId", req.Metadata.WorkflowID)
-			return
+		registration, exists := p.registrations[key]
+		if !exists {
+			registration = trigger.NewPublisherRegistration(p.lggr, req.TriggerID, req.Metadata.WorkflowID,
+				cfg.capDonInfo.ID, p.capabilityID, p.capMethodName, p.dispatcher)
+			p.registrations[key] = registration
 		}
+		registration.AddRequest(sender, msg.CallerDonId)
+
 		// NOTE: require 2F+1 by default, introduce different strategies later (KS-76)
 		minRequired := uint32(2*callerDon.F + 1)
 		ready, payloads := p.messageCache.Ready(key, minRequired, nowMs-cfg.remoteConfig.RegistrationExpiry.Milliseconds(), false)
@@ -223,34 +222,20 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 			p.lggr.Errorw("failed to aggregate trigger registrations", "workflowId", req.Metadata.WorkflowID, "err", err)
 			return
 		}
-		unmarshaled, err := pb.UnmarshalTriggerRegistrationRequest(aggregated)
+		unmarshalled, err := pb.UnmarshalTriggerRegistrationRequest(aggregated)
 		if err != nil {
 			p.lggr.Errorw("failed to unmarshal request", "err", err)
 			return
 		}
+
 		ctx, cancel := p.stopCh.NewCtx()
-		callbackCh, err := cfg.underlying.RegisterTrigger(ctx, unmarshaled)
+		callbackCh, err := registration.RegisterOnUnderlyingTrigger(ctx, cancel, cfg.underlying, unmarshalled)
+
 		if err == nil {
-			p.registrations[key] = &pubRegState{
-				callback: callbackCh,
-				request:  unmarshaled,
-				cancel:   cancel,
-			}
 			p.wg.Add(1)
 			go p.triggerEventLoop(callbackCh, key)
-
-			p.sendTriggerRegistrationResponse(cfg, msg, req, nil)
 			p.lggr.Debugw("updated trigger registration", "workflowId", req.Metadata.WorkflowID)
 		} else {
-			cancel()
-
-			errMsg := "failed to register trigger"
-			var capError caperrors.Error
-			if errors.As(err, &capError) {
-				errMsg = capError.SerializeToRemoteString()
-			}
-
-			p.sendTriggerRegistrationResponse(cfg, msg, req, &errMsg)
 			p.lggr.Errorw("failed to register trigger", "workflowId", req.Metadata.WorkflowID, "err", err)
 		}
 	case types.MethodTriggerEvent:
@@ -260,24 +245,6 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 		p.lggr.Errorw("received message with unknown method",
 			"method", SanitizeLogString(msg.Method), "sender", sender)
 	}
-}
-
-// sendTriggerRegistrationResponse sends a trigger registration response back to the caller DON with an optional error message
-func (p *triggerPublisher) sendTriggerRegistrationResponse(cfg *dynamicPublisherConfig, msg *types.MessageBody, req commoncap.TriggerRegistrationRequest, errMsg *string) {
-	registrationErrorMessage := &types.MessageBody{
-		CapabilityId:    p.capabilityID,
-		CapabilityDonId: cfg.capDonInfo.ID,
-		CallerDonId:     msg.CallerDonId,
-		Method:          types.RegisterTriggerResponse,
-		Metadata: &types.MessageBody_TriggerRegistrationMetadata{
-			TriggerRegistrationMetadata: &types.TriggerRegistrationMetadata{
-				TriggerId: req.TriggerID,
-				Error:     errMsg,
-			},
-		},
-		CapabilityMethod: p.capMethodName,
-	}
-	p.sendToAllNodes(msg.CallerDonId, cfg, registrationErrorMessage)
 }
 
 func (p *triggerPublisher) registrationCleanupLoop() {
@@ -306,15 +273,14 @@ func (p *triggerPublisher) registrationCleanupLoop() {
 			now := time.Now().UnixMilli()
 
 			p.mu.Lock()
-			for key, req := range p.registrations {
+			for key := range p.registrations {
 				callerDon := cfg.workflowDONs[key.callerDonID]
 				ready, _ := p.messageCache.Ready(key, uint32(2*callerDon.F+1), now-cfg.remoteConfig.RegistrationExpiry.Milliseconds(), false)
 				if !ready {
 					p.lggr.Infow("trigger registration expired", "callerDonID", key.callerDonID, "workflowId", key.workflowID)
 					ctx, cancel := p.stopCh.NewCtx()
-					err := cfg.underlying.UnregisterTrigger(ctx, req.request)
+					err := p.registrations[key].UnregisterFromUnderlyingTrigger(ctx)
 					cancel()
-					p.registrations[key].cancel() // Cancel context on register trigger
 					p.lggr.Infow("unregistered trigger", "callerDonID", key.callerDonID, "workflowId", key.workflowID, "err", err)
 					// after calling UnregisterTrigger, the underlying trigger will not send any more events to the channel
 					delete(p.registrations, key)
