@@ -2,6 +2,7 @@ package remote_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -86,6 +87,74 @@ func TestTriggerPublisher_RegistrationResponse(t *testing.T) {
 	require.NotEmpty(t, underlyingTriggerCap.registrationsCh)
 	forwarded := <-underlyingTriggerCap.registrationsCh
 	require.Equal(t, workflowID1, forwarded.Metadata.WorkflowID)
+
+	// Simulate late registration by another peer, should still result in it receiving a response
+	regEvent = newRegisterTriggerMessage(t, workflowDONID, peers[7])
+	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
+		require.Equal(t, peers[7], peerID)
+		require.Equal(t, capID, msgBody.CapabilityId)
+		require.Equal(t, remotetypes.Error_OK, msgBody.Error)
+		require.Equal(t, "", msgBody.ErrorMsg)
+	}).Return(nil).Once()
+	publisher.Receive(ctx, regEvent)
+
+	require.NoError(t, publisher.Close())
+}
+
+func TestTriggerPublisher_RegistrationResponse_WhenTriggerRegistrationFails(t *testing.T) {
+	ctx := testutils.Context(t)
+	capabilityDONID, workflowDONID := uint32(1), uint32(2)
+
+	capInfo := commoncap.CapabilityInfo{
+		ID:             capID,
+		CapabilityType: commoncap.CapabilityTypeTrigger,
+		Description:    "Remote Trigger",
+	}
+
+	underlying := &testTrigger{
+		info:              capInfo,
+		registrationsCh:   make(chan commoncap.TriggerRegistrationRequest, 2),
+		eventCh:           make(chan commoncap.TriggerResponse, 2),
+		registrationError: errors.New("registration error"),
+	}
+
+	_, publisher, dispatcher, peers := newServicesWithTrigger(t, capabilityDONID, workflowDONID, 1, 8, 1,
+		underlying, capInfo)
+
+	// valid registration
+	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
+		require.Equal(t, peers[1], peerID)
+		require.Equal(t, capID, msgBody.CapabilityId)
+		require.Equal(t, "failed to register trigger", *msgBody.GetTriggerRegistrationMetadata().Error)
+	}).Return(nil).Once()
+
+	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
+		require.Equal(t, peers[3], peerID)
+		require.Equal(t, capID, msgBody.CapabilityId)
+		require.Equal(t, "failed to register trigger", *msgBody.GetTriggerRegistrationMetadata().Error)
+	}).Return(nil).Once()
+
+	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
+		require.Equal(t, peers[5], peerID)
+		require.Equal(t, capID, msgBody.CapabilityId)
+		require.Equal(t, "failed to register trigger", *msgBody.GetTriggerRegistrationMetadata().Error)
+	}).Return(nil).Once()
+
+	regEvent := newRegisterTriggerMessage(t, workflowDONID, peers[1])
+	publisher.Receive(ctx, regEvent)
+	regEvent = newRegisterTriggerMessage(t, workflowDONID, peers[3])
+	publisher.Receive(ctx, regEvent)
+	regEvent = newRegisterTriggerMessage(t, workflowDONID, peers[5])
+	publisher.Receive(ctx, regEvent)
+
+	// Simulate late registration by another peer, should still result in it receiving an error response
+	regEvent = newRegisterTriggerMessage(t, workflowDONID, peers[7])
+	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
+		require.Equal(t, peers[7], peerID)
+		require.Equal(t, capID, msgBody.CapabilityId)
+		require.Equal(t, "failed to register trigger", *msgBody.GetTriggerRegistrationMetadata().Error)
+	}).Return(nil).Once()
+	publisher.Receive(ctx, regEvent)
 
 	require.NoError(t, publisher.Close())
 }
@@ -258,13 +327,27 @@ func TestTriggerPublisher_SetConfig_Basic(t *testing.T) {
 
 func newServices(t *testing.T, capabilityDONID uint32, workflowDONID uint32, maxBatchSize uint32,
 	peerCount int, f uint8) (*testTrigger, remotetypes.ReceiverService, *mocks.Dispatcher, []p2ptypes.PeerID) {
-	lggr := logger.Test(t)
-	ctx := testutils.Context(t)
+
 	capInfo := commoncap.CapabilityInfo{
 		ID:             capID,
 		CapabilityType: commoncap.CapabilityTypeTrigger,
 		Description:    "Remote Trigger",
 	}
+
+	underlying := &testTrigger{
+		info:            capInfo,
+		registrationsCh: make(chan commoncap.TriggerRegistrationRequest, 2),
+		eventCh:         make(chan commoncap.TriggerResponse, 2),
+	}
+
+	return newServicesWithTrigger(t, capabilityDONID, workflowDONID, maxBatchSize, peerCount, f, underlying, capInfo)
+}
+
+func newServicesWithTrigger(t *testing.T, capabilityDONID uint32, workflowDONID uint32, maxBatchSize uint32,
+	peerCount int, f uint8, underlying *testTrigger, capInfo commoncap.CapabilityInfo) (*testTrigger, remotetypes.ReceiverService, *mocks.Dispatcher, []p2ptypes.PeerID,
+) {
+	lggr := logger.Test(t)
+	ctx := testutils.Context(t)
 	peers := make([]p2ptypes.PeerID, 8)
 	require.NoError(t, peers[0].UnmarshalText([]byte(peerID1)))
 	require.NoError(t, peers[1].UnmarshalText([]byte(peerID2)))
@@ -309,11 +392,7 @@ func newServices(t *testing.T, capabilityDONID uint32, workflowDONID uint32, max
 	workflowDONs := map[uint32]commoncap.DON{
 		workflowDonInfo.ID: workflowDonInfo,
 	}
-	underlying := &testTrigger{
-		info:            capInfo,
-		registrationsCh: make(chan commoncap.TriggerRegistrationRequest, 2),
-		eventCh:         make(chan commoncap.TriggerResponse, 2),
-	}
+
 	publisher := remote.NewTriggerPublisher(capInfo.ID, "", dispatcher, lggr)
 	require.NoError(t, publisher.SetConfig(config, underlying, capDonInfo, workflowDONs))
 	require.NoError(t, publisher.Start(ctx))
@@ -338,9 +417,10 @@ func newRegisterTriggerMessage(t *testing.T, callerDonID uint32, sender p2ptypes
 }
 
 type testTrigger struct {
-	info            commoncap.CapabilityInfo
-	registrationsCh chan commoncap.TriggerRegistrationRequest
-	eventCh         chan commoncap.TriggerResponse
+	info              commoncap.CapabilityInfo
+	registrationsCh   chan commoncap.TriggerRegistrationRequest
+	eventCh           chan commoncap.TriggerResponse
+	registrationError error
 }
 
 func (tr *testTrigger) Info(_ context.Context) (commoncap.CapabilityInfo, error) {
@@ -348,6 +428,10 @@ func (tr *testTrigger) Info(_ context.Context) (commoncap.CapabilityInfo, error)
 }
 
 func (tr *testTrigger) RegisterTrigger(_ context.Context, request commoncap.TriggerRegistrationRequest) (<-chan commoncap.TriggerResponse, error) {
+	if tr.registrationError != nil {
+		return nil, tr.registrationError
+	}
+
 	tr.registrationsCh <- request
 	return tr.eventCh, nil
 }
