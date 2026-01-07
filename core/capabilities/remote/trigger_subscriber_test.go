@@ -23,6 +23,12 @@ import (
 const (
 	peerID1     = "12D3KooWF3dVeJ6YoT5HFnYhmwQWWMoEwVFzJQ5kKCMX3ZityxMC"
 	peerID2     = "12D3KooWQsmok6aD8PZqt3RnJhQRrNzKHLficq7zYFRp7kZ1hHP8"
+	peerID3     = "12D3KooWJ4v8n2aB7xYt6zQw9pLmNoPqRsTuVwXyZAbCdEfGhIjKl"
+	peerID4     = "12D3KooWb6c7d8e9f0g1h2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y"
+	peerID5     = "12D3KooWzXcVbNmQwErTyUiOpAsDfGhJkLzXcVbNmQwErTyUiOpA3"
+	peerID6     = "12D3KooWmNbVcXzLkJhGfDsAqWeRtYuIoPlMnBvCxZaSdFgHjKlQe"
+	peerID7     = "12D3KooWQwErTyUiOpAsDfGhJkLzXcVbNmQwErTyUiOpAsDfGhJp"
+	peerID8     = "12D3KooWq1w2e3r4t5y6u7i8o9p0a1s2d3f4g5h6j7k8l9z0x1c3v"
 	workflowID1 = "15c631d295ef5e32deb99a10ee6804bc4af13855687559d7ff6552ac6dbb2ce0"
 )
 
