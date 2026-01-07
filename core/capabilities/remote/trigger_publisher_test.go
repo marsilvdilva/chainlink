@@ -24,7 +24,7 @@ func TestTriggerPublisher_Register(t *testing.T) {
 	ctx := testutils.Context(t)
 	capabilityDONID, workflowDONID := uint32(1), uint32(2)
 
-	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 1, 2)
+	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 1, 2, 0)
 
 	// invalid sender case - node 0 is not a member of the workflow DON, registration shoudn't happen
 	regEvent := newRegisterTriggerMessage(t, workflowDONID, peers[0])
@@ -48,12 +48,11 @@ func TestTriggerPublisher_Register(t *testing.T) {
 	require.NoError(t, publisher.Close())
 }
 
-/*
 func TestTriggerPublisher_RegistrationResponse(t *testing.T) {
 	ctx := testutils.Context(t)
 	capabilityDONID, workflowDONID := uint32(1), uint32(2)
 
-	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 1)
+	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 1, 8, 1)
 
 	// valid registration
 	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
@@ -61,22 +60,41 @@ func TestTriggerPublisher_RegistrationResponse(t *testing.T) {
 		require.Equal(t, capID, msgBody.CapabilityId)
 		require.Equal(t, remotetypes.Error_OK, msgBody.Error)
 		require.Equal(t, "", msgBody.ErrorMsg)
-	}).Return(nil)
+	}).Return(nil).Once()
 
-	regEvent = newRegisterTriggerMessage(t, workflowDONID, peers[1])
+	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
+		require.Equal(t, peers[3], peerID)
+		require.Equal(t, capID, msgBody.CapabilityId)
+		require.Equal(t, remotetypes.Error_OK, msgBody.Error)
+		require.Equal(t, "", msgBody.ErrorMsg)
+	}).Return(nil).Once()
+
+	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Run(func(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) {
+		require.Equal(t, peers[5], peerID)
+		require.Equal(t, capID, msgBody.CapabilityId)
+		require.Equal(t, remotetypes.Error_OK, msgBody.Error)
+		require.Equal(t, "", msgBody.ErrorMsg)
+	}).Return(nil).Once()
+
+	regEvent := newRegisterTriggerMessage(t, workflowDONID, peers[1])
 	publisher.Receive(ctx, regEvent)
+	regEvent = newRegisterTriggerMessage(t, workflowDONID, peers[3])
+	publisher.Receive(ctx, regEvent)
+	regEvent = newRegisterTriggerMessage(t, workflowDONID, peers[5])
+	publisher.Receive(ctx, regEvent)
+
 	require.NotEmpty(t, underlyingTriggerCap.registrationsCh)
 	forwarded := <-underlyingTriggerCap.registrationsCh
 	require.Equal(t, workflowID1, forwarded.Metadata.WorkflowID)
 
 	require.NoError(t, publisher.Close())
-}*/
+}
 
 func TestTriggerPublisher_ReceiveTriggerEvents_NoBatching(t *testing.T) {
 	ctx := testutils.Context(t)
 	capabilityDONID, workflowDONID := uint32(1), uint32(2)
 
-	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 1, 2)
+	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 1, 2, 0)
 	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Return(nil).Once()
 
 	regEvent := newRegisterTriggerMessage(t, workflowDONID, peers[1])
@@ -98,7 +116,7 @@ func TestTriggerPublisher_ReceiveTriggerEvents_BatchingEnabled(t *testing.T) {
 	ctx := testutils.Context(t)
 	capabilityDONID, workflowDONID := uint32(1), uint32(2)
 
-	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 2, 2)
+	underlyingTriggerCap, publisher, dispatcher, peers := newServices(t, capabilityDONID, workflowDONID, 2, 2, 0)
 	regEvent := newRegisterTriggerMessage(t, workflowDONID, peers[1])
 	dispatcher.EXPECT().Send(mock.Anything, mock.Anything).Return(nil).Once()
 	publisher.Receive(ctx, regEvent)
@@ -239,7 +257,7 @@ func TestTriggerPublisher_SetConfig_Basic(t *testing.T) {
 }
 
 func newServices(t *testing.T, capabilityDONID uint32, workflowDONID uint32, maxBatchSize uint32,
-	peerCount int) (*testTrigger, remotetypes.ReceiverService, *mocks.Dispatcher, []p2ptypes.PeerID) {
+	peerCount int, f uint8) (*testTrigger, remotetypes.ReceiverService, *mocks.Dispatcher, []p2ptypes.PeerID) {
 	lggr := logger.Test(t)
 	ctx := testutils.Context(t)
 	capInfo := commoncap.CapabilityInfo{
@@ -271,12 +289,12 @@ func newServices(t *testing.T, capabilityDONID uint32, workflowDONID uint32, max
 	capDonInfo := commoncap.DON{
 		ID:      capabilityDONID,
 		Members: capPeers, // peer 0 is in the capability DON
-		F:       0,
+		F:       f,
 	}
 	workflowDonInfo := commoncap.DON{
 		ID:      workflowDONID,
 		Members: workflowPeers, // peer 1 is in the workflow DON
-		F:       0,
+		F:       f,
 	}
 
 	dispatcher := mocks.NewDispatcher(t)
