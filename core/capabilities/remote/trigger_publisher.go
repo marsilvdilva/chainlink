@@ -200,7 +200,6 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 
-		// TODO a single rogue node could keep a trigger registration alive
 		p.messageCache.Insert(key, sender, nowMs, msg.Payload)
 		registration, exists := p.registrations[key]
 		if !exists {

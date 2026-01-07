@@ -12,7 +12,7 @@ import (
 	p2ptypes "github.com/smartcontractkit/chainlink/v2/core/services/p2p/types"
 )
 
-type publisherRequest struct {
+type triggerRegistrationRequest struct {
 	peerID      p2ptypes.PeerID
 	callerDonID uint32
 }
@@ -33,7 +33,7 @@ type PublisherRegistration struct {
 	underlyingTriggerRegistrationRequest commoncap.TriggerRegistrationRequest
 	cancel                               context.CancelFunc
 
-	requests []publisherRequest
+	registrationRequests []triggerRegistrationRequest
 
 	// TODO migrate error from string
 	registrationResult *types.Error
@@ -59,7 +59,7 @@ func NewPublisherRegistration(lggr logger.Logger,
 }
 
 func (rm *PublisherRegistration) AddRequest(peerID p2ptypes.PeerID, callerDonID uint32) {
-	rm.requests = append(rm.requests, publisherRequest{peerID: peerID, callerDonID: callerDonID})
+	rm.registrationRequests = append(rm.registrationRequests, triggerRegistrationRequest{peerID: peerID, callerDonID: callerDonID})
 
 	if rm.registrationResult != nil {
 		// registration already completed, send response immediately
@@ -69,6 +69,11 @@ func (rm *PublisherRegistration) AddRequest(peerID p2ptypes.PeerID, callerDonID 
 }
 
 func (rm *PublisherRegistration) RegisterOnUnderlyingTrigger(ctx context.Context, cancelCtx context.CancelFunc, underlyingTrigger commoncap.TriggerCapability, request commoncap.TriggerRegistrationRequest) (<-chan commoncap.TriggerResponse, error) {
+
+	if rm.registrationResult != nil {
+		// Should only ever attempt registration on the underlying trigger once for a given publisher registration instance
+		return nil, errors.New("underlying trigger registration already attempted")
+	}
 
 	rm.underlyingTrigger = underlyingTrigger
 	rm.underlyingTriggerRegistrationRequest = request
@@ -93,8 +98,8 @@ func (rm *PublisherRegistration) RegisterOnUnderlyingTrigger(ctx context.Context
 	rm.registrationResult = &result
 	rm.errorMessage = errMsg
 
-	for _, request := range rm.requests {
-		rm.sendTriggerRegistrationResponse(request.peerID, request.callerDonID, errMsg)
+	for _, registrationRequests := range rm.registrationRequests {
+		rm.sendTriggerRegistrationResponse(registrationRequests.peerID, registrationRequests.callerDonID, errMsg)
 	}
 
 	return callbackCh, err
@@ -110,7 +115,7 @@ func (rm *PublisherRegistration) UnregisterFromUnderlyingTrigger(ctx context.Con
 }
 
 // sendTriggerRegistrationResponse sends a trigger registration response back to the caller DON with an optional error message
-func (p *PublisherRegistration) sendTriggerRegistrationResponse(peerID p2ptypes.PeerID, callerDonID uint32, errMsg string) {
+func (rm *PublisherRegistration) sendTriggerRegistrationResponse(peerID p2ptypes.PeerID, callerDonID uint32, errMsg string) {
 
 	// TODO migrate to using an error on the registration metadata instead of error string
 	var errMsgPtr *string
@@ -119,21 +124,21 @@ func (p *PublisherRegistration) sendTriggerRegistrationResponse(peerID p2ptypes.
 	}
 
 	registrationResponseMessage := &types.MessageBody{
-		CapabilityId:    p.capabilityID,
-		CapabilityDonId: p.capabilityDonID,
+		CapabilityId:    rm.capabilityID,
+		CapabilityDonId: rm.capabilityDonID,
 		CallerDonId:     callerDonID,
 		Method:          types.RegisterTriggerResponse,
 		Metadata: &types.MessageBody_TriggerRegistrationMetadata{
 			TriggerRegistrationMetadata: &types.TriggerRegistrationMetadata{
-				TriggerId:  p.triggerID,
-				WorkflowId: p.workflowID,
+				TriggerId:  rm.triggerID,
+				WorkflowId: rm.workflowID,
 				Error:      errMsgPtr,
 			},
 		},
-		CapabilityMethod: p.capMethodName,
+		CapabilityMethod: rm.capMethodName,
 	}
-	err := p.dispatcher.Send(peerID, registrationResponseMessage)
+	err := rm.dispatcher.Send(peerID, registrationResponseMessage)
 	if err != nil {
-		p.lggr.Errorw("failed to send trigger registration response", "peerID", peerID, "err", err)
+		rm.lggr.Errorw("failed to send trigger registration response", "peerID", peerID, "err", err)
 	}
 }
