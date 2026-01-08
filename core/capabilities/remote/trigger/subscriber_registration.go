@@ -96,7 +96,13 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 		if successfulRegistrationCount >= (capDonF + 1) {
 			// Successful registration
 			sr.lggr.Infow("successful trigger registration", "triggerID", meta.TriggerId, "sender", sender)
-			sr.initialRegistrationResponseChan <- nil
+
+			select {
+			case sr.initialRegistrationResponseChan <- nil:
+				// sending nil error to indicate success
+			default:
+				// channel is closed or response has been sent already
+			}
 		} else {
 			// Registration failed - send error response
 
@@ -104,7 +110,11 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 			for errStr, count := range errorToCount {
 				if count >= int(capDonF+1) {
 					sr.lggr.Errorw("trigger registration failed with error", "triggerID", meta.TriggerId, "sender", sender, "error", log.SanitizeLogString(errStr), "count", count)
-					sr.initialRegistrationResponseChan <- errors.New(errStr)
+					select {
+					case sr.initialRegistrationResponseChan <- errors.New(errStr):
+					default:
+						// channel is closed or response has been sent already
+					}
 					return
 				}
 			}
@@ -125,6 +135,9 @@ func (sr *SubscriberRegistration) AwaitInitialRegistrationResponse(ctx context.C
 		return sr.callback, nil
 	}
 	sr.mu.Unlock()
+
+	// Channel is only used once to await response, close after use
+	defer close(sr.initialRegistrationResponseChan)
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, registrationResponseTimeout)
 	defer cancel()
