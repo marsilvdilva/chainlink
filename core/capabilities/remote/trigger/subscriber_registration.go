@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -35,6 +36,9 @@ type SubscriberRegistration struct {
 	rawRequest []byte
 
 	registrationResponseCache *messagecache.MessageCache[TriggerRegistrationKey, p2ptypes.PeerID]
+
+	mu                                   sync.Mutex
+	isInitialRegistrationResponseAwaited bool
 
 	// TODO need to clean this up after initial registration response is sent and ensure following sent responses are effectively noops and do not block
 	initialRegistrationResponseChan chan error
@@ -113,24 +117,27 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 
 func (sr *SubscriberRegistration) AwaitInitialRegistrationResponse(ctx context.Context, subscriberStopCh chan struct{}) (<-chan commoncap.TriggerResponse, error) {
 
-	here - needs lock and flag
-
-	if sr.initialRegistrationResponseChan != nil {
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, registrationResponseTimeout)
-		defer cancel()
-
-		select {
-		case <-subscriberStopCh:
-			return nil, errors.New("trigger subscriber is stopping")
-		case <-ctxWithTimeout.Done():
-			return nil, ctx.Err()
-		case err := <-sr.initialRegistrationResponseChan:
-			if err != nil {
-				return nil, err
-			}
-			return sr.callback, nil
-		}
+	sr.mu.Lock()
+	if !sr.isInitialRegistrationResponseAwaited {
+		sr.isInitialRegistrationResponseAwaited = true
 	} else {
+		sr.mu.Unlock()
+		return sr.callback, nil
+	}
+	sr.mu.Unlock()
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, registrationResponseTimeout)
+	defer cancel()
+
+	select {
+	case <-subscriberStopCh:
+		return nil, errors.New("trigger subscriber is stopping")
+	case <-ctxWithTimeout.Done():
+		return nil, ctx.Err()
+	case err := <-sr.initialRegistrationResponseChan:
+		if err != nil {
+			return nil, err
+		}
 		return sr.callback, nil
 	}
 }
