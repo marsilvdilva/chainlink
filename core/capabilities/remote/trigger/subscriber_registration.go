@@ -39,9 +39,7 @@ type SubscriberRegistration struct {
 
 	mu                                   sync.Mutex
 	isInitialRegistrationResponseAwaited bool
-
-	// TODO need to clean this up after initial registration response is sent and ensure following sent responses are effectively noops and do not block
-	initialRegistrationResponseChan chan error
+	initialRegistrationResponseChan      chan error
 }
 
 func NewSubscriberRegistration(lggr logger.Logger, rawRequest []byte,
@@ -74,7 +72,7 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 		sr.registrationResponseCache.Insert(key, sender, nowMs, nil)
 	}
 
-	// TODO check min responses to aggregate, is it 2f+1, will it always be greater that cap don f +1 ?  (why is f number not being used here, or is it effectively used to define min reponses?)
+	// TODO check min responses to aggregate, is it 2f+1, will it always be greater that cap don f +1 ?  (why is f number not being used here, or is it effectively used to define min responses?)
 	ready, registrationResponses := sr.registrationResponseCache.Ready(key, minResponseToAggregate, nowMs-messageExpiryMilliseconds, true)
 
 	if ready {
@@ -96,32 +94,28 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 		if successfulRegistrationCount >= (capDonF + 1) {
 			// Successful registration
 			sr.lggr.Infow("successful trigger registration", "triggerID", meta.TriggerId, "sender", sender)
-
-			select {
-			case sr.initialRegistrationResponseChan <- nil:
-				// sending nil error to indicate success
-			default:
-				// channel is closed or response has been sent already
-			}
+			sr.sendInitialRegistrationResponse(nil)
 		} else {
 			// Registration failed - send error response
 
 			// Is there a consensus error?  if so send that
 			for errStr, count := range errorToCount {
 				if count >= int(capDonF+1) {
-					sr.lggr.Errorw("trigger registration failed with error", "triggerID", meta.TriggerId, "sender", sender, "error", log.SanitizeLogString(errStr), "count", count)
-					select {
-					case sr.initialRegistrationResponseChan <- errors.New(errStr):
-					default:
-						// channel is closed or response has been sent already
-					}
-					return
+					sr.sendInitialRegistrationResponse(errors.New(errStr))
 				}
 			}
 
-			// If there is no consensus error, return a generic error
-			sr.initialRegistrationResponseChan <- fmt.Errorf("received %d errors, last error %s : %s", totalErrorCount, msg.Error, log.SanitizeLogString(msg.ErrorMsg))
+			// If there is no consensus error, return a generic error message
+			sr.sendInitialRegistrationResponse(fmt.Errorf("received %d errors, last error %s : %s", totalErrorCount, msg.Error, log.SanitizeLogString(msg.ErrorMsg)))
 		}
+	}
+}
+
+func (sr *SubscriberRegistration) sendInitialRegistrationResponse(err error) {
+	select {
+	case sr.initialRegistrationResponseChan <- err:
+	default:
+		// channel is closed or initial registration response has been sent already
 	}
 }
 

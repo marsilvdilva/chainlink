@@ -24,7 +24,6 @@ type PublisherRegistration struct {
 	triggerID       string
 	workflowID      string
 	capabilityID    string
-	capMethodName   string
 	capabilityDonID uint32
 
 	underlyingTrigger commoncap.TriggerCapability
@@ -45,14 +44,12 @@ func NewPublisherRegistration(lggr logger.Logger,
 	workflowID string,
 	capabilityDonId uint32, // TODO verify that this not being dynamic is acceptable, given the initial registration is only active for a short period of time this should be ok?
 	capabilityID string,
-	capMethodName string,
 	dispatcher types.Dispatcher) *PublisherRegistration {
 	return &PublisherRegistration{
 		lggr:            lggr,
 		triggerID:       triggerID,
 		workflowID:      workflowID,
 		capabilityID:    capabilityID,
-		capMethodName:   capMethodName,
 		capabilityDonID: capabilityDonId,
 		dispatcher:      dispatcher,
 	}
@@ -135,7 +132,6 @@ func (rm *PublisherRegistration) sendTriggerRegistrationResponse(peerID p2ptypes
 				Error:      errMsgPtr,
 			},
 		},
-		CapabilityMethod: rm.capMethodName,
 	}
 	err := rm.dispatcher.Send(peerID, registrationResponseMessage)
 	if err != nil {
