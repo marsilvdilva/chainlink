@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/log"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/trigger"
 
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/aggregation"
@@ -171,7 +172,7 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 
 	if msg.ErrorMsg != "" {
 		p.lggr.Errorw("received a message with error",
-			"method", SanitizeLogString(msg.Method), "sender", sender, "errorMsg", SanitizeLogString(msg.ErrorMsg))
+			"method", log.SanitizeLogString(msg.Method), "sender", sender, "errorMsg", log.SanitizeLogString(msg.ErrorMsg))
 	}
 
 	switch msg.Method {
@@ -191,7 +192,7 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 			return
 		}
 		if err = validation.ValidateWorkflowOrExecutionID(req.Metadata.WorkflowID); err != nil {
-			p.lggr.Errorw("received trigger request with invalid workflow ID", "workflowId", SanitizeLogString(req.Metadata.WorkflowID), "err", err)
+			p.lggr.Errorw("received trigger request with invalid workflow ID", "workflowId", log.SanitizeLogString(req.Metadata.WorkflowID), "err", err)
 			return
 		}
 		p.lggr.Debugw("received trigger registration", "workflowId", req.Metadata.WorkflowID, "sender", sender)
@@ -239,10 +240,10 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 		}
 	case types.MethodTriggerEvent:
 		p.lggr.Errorw("trigger request failed with error",
-			"method", SanitizeLogString(msg.Method), "sender", sender, "errorMsg", SanitizeLogString(msg.ErrorMsg))
+			"method", log.SanitizeLogString(msg.Method), "sender", sender, "errorMsg", log.SanitizeLogString(msg.ErrorMsg))
 	default:
 		p.lggr.Errorw("received message with unknown method",
-			"method", SanitizeLogString(msg.Method), "sender", sender)
+			"method", log.SanitizeLogString(msg.Method), "sender", sender)
 	}
 }
 

@@ -12,6 +12,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/log"
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/trigger"
 
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/messagecache"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
@@ -32,8 +34,8 @@ type triggerSubscriber struct {
 	cfg           atomic.Pointer[dynamicConfig]
 
 	messageCache              *messagecache.MessageCache[triggerEventKey, p2ptypes.PeerID]
-	registrationResponseCache *messagecache.MessageCache[triggerRegistrationKey, p2ptypes.PeerID]
-	registeredWorkflows       map[string]*subRegState
+	registrationResponseCache *messagecache.MessageCache[trigger.TriggerRegistrationKey, p2ptypes.PeerID]
+	registeredWorkflows       map[string]*trigger.SubscriberRegistration
 	mu                        sync.RWMutex // protects registeredWorkflows and messageCache
 	stopCh                    services.StopChan
 	wg                        sync.WaitGroup
@@ -49,21 +51,9 @@ type dynamicConfig struct {
 	aggregator    types.Aggregator
 }
 
-type triggerRegistrationKey struct {
-	triggerID string
-}
-
 type triggerEventKey struct {
 	triggerEventID string
 	workflowID     string
-}
-
-type subRegState struct {
-	callback   chan commoncap.TriggerResponse
-	rawRequest []byte
-
-	// TODO need to clean this up after initial registration response is sent and ensure following sent responses are effectively noops and do not block
-	initialRegistrationResponseChan chan error
 }
 
 type TriggerSubscriber interface {
@@ -78,13 +68,7 @@ var _ services.Service = &triggerSubscriber{}
 
 const (
 	// Engine reads trigger events without blocking and applies its own limits
-	sendChannelBufferSize = 1000
 	maxBatchedWorkflowIDs = 1000
-
-	// This is required to ensure registration calls return if the remote node does not support the trigger capability
-	// response protocol.  Once all nodes support the trigger capability response protocol, this timeout should be
-	// changed to return timeout error.
-	registrationResponseTimeout = 10 * time.Second
 )
 
 func NewTriggerSubscriber(capabilityID string, capMethodName string, dispatcher types.Dispatcher, lggr logger.Logger) *triggerSubscriber {
@@ -93,8 +77,8 @@ func NewTriggerSubscriber(capabilityID string, capMethodName string, dispatcher 
 		capMethodName:             capMethodName,
 		dispatcher:                dispatcher,
 		messageCache:              messagecache.NewMessageCache[triggerEventKey, p2ptypes.PeerID](),
-		registrationResponseCache: messagecache.NewMessageCache[triggerRegistrationKey, p2ptypes.PeerID](),
-		registeredWorkflows:       make(map[string]*subRegState),
+		registrationResponseCache: messagecache.NewMessageCache[trigger.TriggerRegistrationKey, p2ptypes.PeerID](),
+		registeredWorkflows:       make(map[string]*trigger.SubscriberRegistration),
 		stopCh:                    make(services.StopChan),
 		lggr:                      logger.With(logger.Named(lggr, "TriggerSubscriber"), "capabilityID", capabilityID, "capMethodName", capMethodName),
 	}
@@ -159,44 +143,18 @@ func (s *triggerSubscriber) RegisterTrigger(ctx context.Context, request commonc
 
 	s.mu.Lock()
 	s.lggr.Infow("RegisterTrigger called", "donId", cfg.capDonInfo.ID, "workflowID", request.Metadata.WorkflowID)
-	regState, ok := s.registeredWorkflows[request.Metadata.WorkflowID]
+	registration, ok := s.registeredWorkflows[request.Metadata.WorkflowID]
 
-	var initialRegistrationResponseChan chan error
 	if !ok {
-		initialRegistrationResponseChan = make(chan error, 1)
-		regState = &subRegState{
-			callback:                        make(chan commoncap.TriggerResponse, sendChannelBufferSize),
-			rawRequest:                      rawRequest,
-			initialRegistrationResponseChan: initialRegistrationResponseChan,
-		}
-
-		// instead of the below communicating what is and is not registered, lets use a channel to send registration and unregistration requests
-		// that are processed in the registration loop - through this doesn't solve the problem of pulling back the response channel on message receipt
-		s.registeredWorkflows[request.Metadata.WorkflowID] = regState
+		registration = trigger.NewSubscriberRegistration(s.lggr, rawRequest, s.registrationResponseCache)
+		s.registeredWorkflows[request.Metadata.WorkflowID] = registration
 	} else {
-		regState.rawRequest = rawRequest
+		registration.UpdateRequest(rawRequest)
 		s.lggr.Warnw("RegisterTrigger re-registering trigger", "donId", cfg.capDonInfo.ID, "workflowID", request.Metadata.WorkflowID)
 	}
 	s.mu.Unlock()
 
-	if initialRegistrationResponseChan != nil {
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, registrationResponseTimeout)
-		defer cancel()
-
-		select {
-		case <-s.stopCh:
-			return nil, errors.New("trigger subscriber is stopping")
-		case <-ctxWithTimeout.Done():
-			return nil, ctx.Err()
-		case err = <-initialRegistrationResponseChan:
-			if err != nil {
-				return nil, err
-			}
-			return regState.callback, nil
-		}
-	} else {
-		return regState.callback, nil
-	}
+	return registration.AwaitInitialRegistrationResponse(ctx, s.stopCh)
 }
 
 func (s *triggerSubscriber) registrationLoop() {
@@ -229,7 +187,7 @@ func (s *triggerSubscriber) registrationLoop() {
 						CapabilityDonId:  cfg.capDonInfo.ID,
 						CallerDonId:      cfg.localDonID,
 						Method:           types.MethodRegisterTrigger,
-						Payload:          registration.rawRequest,
+						Payload:          registration.GetRawRequest(),
 						CapabilityMethod: s.capMethodName,
 					}
 					err := s.dispatcher.Send(peerID, m)
@@ -247,9 +205,9 @@ func (s *triggerSubscriber) UnregisterTrigger(ctx context.Context, request commo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	state := s.registeredWorkflows[request.Metadata.WorkflowID]
-	if state != nil && state.callback != nil {
-		close(state.callback)
+	registration := s.registeredWorkflows[request.Metadata.WorkflowID]
+	if registration != nil {
+		registration.Close()
 	}
 	delete(s.registeredWorkflows, request.Metadata.WorkflowID)
 	// Registrations will quickly expire on all remote nodes.
@@ -288,7 +246,7 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 			registration, found := s.registeredWorkflows[workflowID]
 			s.mu.RUnlock()
 			if !found {
-				s.lggr.Errorw("received message for unregistered workflow", "workflowID", SanitizeLogString(workflowID), "sender", sender)
+				s.lggr.Errorw("received message for unregistered workflow", "workflowID", log.SanitizeLogString(workflowID), "sender", sender)
 				continue
 			}
 			key := triggerEventKey{
@@ -308,7 +266,7 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 					continue
 				}
 				s.lggr.Infow("remote trigger event aggregated", "triggerEventID", meta.TriggerEventId, "workflowId", workflowID)
-				registration.callback <- aggregatedResponse
+				registration.SendAggregatedEvent(aggregatedResponse)
 			}
 		}
 	} else if msg.Method == types.RegisterTriggerResponse {
@@ -317,62 +275,13 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 		registration, found := s.registeredWorkflows[meta.WorkflowId]
 		s.mu.RUnlock()
 		if !found {
-			s.lggr.Errorw("received trigger registration response message for unregistered workflow", "workflowID", SanitizeLogString(meta.WorkflowId), "sender", sender)
+			s.lggr.Errorw("received trigger registration response message for unregistered workflow", "workflowID", log.SanitizeLogString(meta.WorkflowId), "sender", sender)
 			return
 		}
 
-		key := triggerRegistrationKey{
-			triggerID: meta.TriggerId,
-		}
-
-		nowMs := time.Now().UnixMilli()
-		if meta.Error != nil {
-			s.registrationResponseCache.Insert(key, sender, nowMs, []byte(*meta.Error))
-		} else {
-			s.registrationResponseCache.Insert(key, sender, nowMs, nil)
-		}
-
-		// TODO check min responses to aggregate, is it 2f+1 ?
-		ready, responseErrors := s.registrationResponseCache.Ready(key, cfg.remoteConfig.MinResponsesToAggregate, nowMs-cfg.remoteConfig.MessageExpiry.Milliseconds(), true)
-
-		if ready {
-			var successfulRegistrationCount uint8
-			var totalErrorCount int
-
-			// aggregate errors by message
-			errorToCount := map[string]int{}
-			for _, responseError := range responseErrors {
-				if len(responseError) > 0 {
-					errorStr := string(responseError)
-					errorToCount[errorStr] = errorToCount[errorStr] + 1
-					totalErrorCount++
-				} else {
-					successfulRegistrationCount++
-				}
-			}
-
-			if successfulRegistrationCount >= (s.cfg.Load().capDonInfo.F + 1) {
-				// Successful registration
-				s.lggr.Infow("successful trigger registration", "triggerID", meta.TriggerId, "sender", sender)
-				s.registeredWorkflows[meta.TriggerId].initialRegistrationResponseChan <- nil
-			} else {
-				// Registration failed - send error response
-
-				// Is there a consensus error?  if so send that
-				for errStr, count := range errorToCount {
-					if count >= int(s.cfg.Load().capDonInfo.F+1) {
-						s.lggr.Errorw("trigger registration failed with error", "triggerID", meta.TriggerId, "sender", sender, "error", SanitizeLogString(errStr), "count", count)
-						registration.initialRegistrationResponseChan <- errors.New(errStr)
-						return
-					}
-				}
-
-				// If there is no consensus error, return a generic error
-				registration.initialRegistrationResponseChan <- fmt.Errorf("received %d errors, last error %s : %s", totalErrorCount, msg.Error, SanitizeLogString(msg.ErrorMsg))
-			}
-		}
+		registration.HandleTriggerRegistrationResponse(sender, msg, cfg.remoteConfig.MinResponsesToAggregate, cfg.remoteConfig.MessageExpiry.Milliseconds(), cfg.capDonInfo.F)
 	} else {
-		s.lggr.Errorw("received trigger event with unknown method", "method", SanitizeLogString(msg.Method), "sender", sender, "err", SanitizeLogString(msg.ErrorMsg))
+		s.lggr.Errorw("received trigger event with unknown method", "method", log.SanitizeLogString(msg.Method), "sender", sender, "err", log.SanitizeLogString(msg.ErrorMsg))
 	}
 }
 

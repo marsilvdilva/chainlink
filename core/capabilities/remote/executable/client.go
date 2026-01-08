@@ -12,8 +12,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/log"
 
-	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/executable/request"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/transmission"
@@ -287,7 +287,7 @@ func (c *client) Receive(ctx context.Context, msg *types.MessageBody) {
 
 	messageID, err := GetMessageID(msg)
 	if err != nil {
-		c.lggr.Errorw("invalid message ID", "err", err, "id", remote.SanitizeLogString(string(msg.MessageId)))
+		c.lggr.Errorw("invalid message ID", "err", err, "id", log.SanitizeLogString(string(msg.MessageId)))
 		return
 	}
 
