@@ -20,6 +20,15 @@ import (
 	p2ptypes "github.com/smartcontractkit/chainlink/v2/core/services/p2p/types"
 )
 
+const (
+	// This is required to ensure registration calls return if the remote node does not support the trigger capability
+	// response protocol.  Once all nodes support the trigger capability response protocol, this timeout could be
+	// changed to return timeout error instead if we wanted to indicate that registration may have failed.  Current behaviour
+	// of the remote triggers is automatically resubscribe so the registration response is only to indicate success/failure of the registration
+	// request itself so that user registration errors (i.e. invalid arguments) can be handled appropriately.
+	registrationResponseTimeout = 10 * time.Second
+)
+
 // TriggerSubscriber is a shim for remote trigger capabilities.
 // It translates between capability API calls and network messages.
 // Its responsibilities are:
@@ -146,7 +155,7 @@ func (s *triggerSubscriber) RegisterTrigger(ctx context.Context, request commonc
 	registration, ok := s.registeredWorkflows[request.Metadata.WorkflowID]
 
 	if !ok {
-		registration = trigger.NewSubscriberRegistration(s.lggr, rawRequest, s.registrationResponseCache)
+		registration = trigger.NewSubscriberRegistration(s.lggr, rawRequest, s.registrationResponseCache, registrationResponseTimeout)
 		s.registeredWorkflows[request.Metadata.WorkflowID] = registration
 	} else {
 		registration.UpdateRequest(rawRequest)

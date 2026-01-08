@@ -16,15 +16,10 @@ import (
 )
 
 const (
-	// This is required to ensure registration calls return if the remote node does not support the trigger capability
-	// response protocol.  Once all nodes support the trigger capability response protocol, this timeout could be
-	// changed to return timeout error instead if we wanted to indicate that registration may have failed.  Current behaviour
-	// of the remote triggers is automatically resubscribe so the registration response is only to indicate success/failure of the registration
-	// request itself so that user registration errors (i.e. invalid arguments) can be handled appropriately.
-	registrationResponseTimeout = 10 * time.Second
-
 	sendChannelBufferSize = 1000
 )
+
+var ErrRegistrationResponseTimeout = errors.New("registration response timeout")
 
 type TriggerRegistrationKey struct {
 	triggerID string
@@ -35,7 +30,8 @@ type SubscriberRegistration struct {
 	callback   chan commoncap.TriggerResponse
 	rawRequest []byte
 
-	registrationResponseCache *messagecache.MessageCache[TriggerRegistrationKey, p2ptypes.PeerID]
+	registrationResponseCache   *messagecache.MessageCache[TriggerRegistrationKey, p2ptypes.PeerID]
+	registrationResponseTimeout time.Duration
 
 	mu                                   sync.Mutex
 	isInitialRegistrationResponseAwaited bool
@@ -43,13 +39,15 @@ type SubscriberRegistration struct {
 }
 
 func NewSubscriberRegistration(lggr logger.Logger, rawRequest []byte,
-	registrationResponseCache *messagecache.MessageCache[TriggerRegistrationKey, p2ptypes.PeerID]) *SubscriberRegistration {
+	registrationResponseCache *messagecache.MessageCache[TriggerRegistrationKey, p2ptypes.PeerID],
+	registrationResponseTimeout time.Duration) *SubscriberRegistration {
 	return &SubscriberRegistration{
 		lggr:                            lggr,
 		callback:                        make(chan commoncap.TriggerResponse, sendChannelBufferSize),
 		rawRequest:                      rawRequest,
 		registrationResponseCache:       registrationResponseCache,
 		initialRegistrationResponseChan: make(chan error, 1),
+		registrationResponseTimeout:     registrationResponseTimeout,
 	}
 }
 
@@ -99,14 +97,18 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 			// Registration failed - send error response
 
 			// Is there a consensus error?  if so send that
+			lastErr := ""
 			for errStr, count := range errorToCount {
 				if count >= int(capDonF+1) {
 					sr.sendInitialRegistrationResponse(errors.New(errStr))
+					return
 				}
+
+				lastErr = errStr
 			}
 
 			// If there is no consensus error, return a generic error message
-			sr.sendInitialRegistrationResponse(fmt.Errorf("received %d errors, last error %s : %s", totalErrorCount, msg.Error, log.SanitizeLogString(msg.ErrorMsg)))
+			sr.sendInitialRegistrationResponse(fmt.Errorf("received %d errors, last error %s : %s", totalErrorCount, msg.Error, log.SanitizeLogString(lastErr)))
 		}
 	}
 }
@@ -119,6 +121,10 @@ func (sr *SubscriberRegistration) sendInitialRegistrationResponse(err error) {
 	}
 }
 
+// AwaitInitialRegistrationResponse waits for the initial registration response to be ready or context cancellation.  If the initial registration response
+// is not received within a predefined timeout or the response received is an error then the error is returned, in addition the response channel is always returned.
+// The caller should check the error and determine what to do.  For example, if the error is a user capability error then it would be reasonable not to
+// retry this error and ensure that the error message is propagated to the workflow.
 func (sr *SubscriberRegistration) AwaitInitialRegistrationResponse(ctx context.Context, subscriberStopCh chan struct{}) (<-chan commoncap.TriggerResponse, error) {
 
 	sr.mu.Lock()
@@ -133,17 +139,17 @@ func (sr *SubscriberRegistration) AwaitInitialRegistrationResponse(ctx context.C
 	// Channel is only used once to await response, close after use
 	defer close(sr.initialRegistrationResponseChan)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, registrationResponseTimeout)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, sr.registrationResponseTimeout)
 	defer cancel()
 
 	select {
 	case <-subscriberStopCh:
-		return nil, errors.New("trigger subscriber is stopping")
+		return sr.callback, errors.New("trigger subscriber is stopping")
 	case <-ctxWithTimeout.Done():
-		return nil, ctx.Err()
+		return sr.callback, ErrRegistrationResponseTimeout
 	case err := <-sr.initialRegistrationResponseChan:
 		if err != nil {
-			return nil, err
+			return sr.callback, err
 		}
 		return sr.callback, nil
 	}
