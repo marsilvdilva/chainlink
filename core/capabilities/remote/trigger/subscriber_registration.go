@@ -33,9 +33,11 @@ type SubscriberRegistration struct {
 	registrationResponseCache   *messagecache.MessageCache[TriggerRegistrationKey, p2ptypes.PeerID]
 	registrationResponseTimeout time.Duration
 
-	mu                                   sync.Mutex
+	mu sync.Mutex
+	// TODO confirm this flag can be removed if we can ensure that AwaitInitialRegistrationResponse is only called once
 	isInitialRegistrationResponseAwaited bool
-	initialRegistrationResponseChan      chan error
+
+	initialRegistrationResponseChan chan error
 }
 
 func NewSubscriberRegistration(lggr logger.Logger, rawRequest []byte,
@@ -126,6 +128,7 @@ func (sr *SubscriberRegistration) sendInitialRegistrationResponse(err error) {
 // retry this error and ensure that the error message is propagated to the workflow.
 func (sr *SubscriberRegistration) AwaitInitialRegistrationResponse(ctx context.Context, subscriberStopCh chan struct{}) (<-chan commoncap.TriggerResponse, error) {
 
+	// TODO confirm this should only be called once so check below is probably unnecessary
 	sr.mu.Lock()
 	if !sr.isInitialRegistrationResponseAwaited {
 		sr.isInitialRegistrationResponseAwaited = true

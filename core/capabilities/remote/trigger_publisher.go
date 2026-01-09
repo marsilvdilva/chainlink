@@ -380,16 +380,12 @@ func (p *triggerPublisher) sendBatch(resp *batchedResponse) {
 			},
 			CapabilityMethod: p.capMethodName,
 		}
-		p.sendToAllNodes(resp.callerDonID, cfg, msg)
-	}
-}
-
-func (p *triggerPublisher) sendToAllNodes(callerDonID uint32, cfg *dynamicPublisherConfig, msg *types.MessageBody) {
-	// NOTE: send to all nodes by default, introduce different strategies later (KS-76)
-	for _, peerID := range cfg.workflowDONs[callerDonID].Members {
-		err := p.dispatcher.Send(peerID, msg)
-		if err != nil {
-			p.lggr.Errorw("failed to send trigger event", "peerID", peerID, "err", err)
+		// NOTE: send to all nodes by default, introduce different strategies later (KS-76)
+		for _, peerID := range cfg.workflowDONs[resp.callerDonID].Members {
+			err := p.dispatcher.Send(peerID, msg)
+			if err != nil {
+				p.lggr.Errorw("failed to send trigger event", "peerID", peerID, "err", err)
+			}
 		}
 	}
 }

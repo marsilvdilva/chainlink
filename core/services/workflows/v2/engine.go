@@ -442,6 +442,9 @@ func (e *Engine) runTriggerSubscriptionPhase(ctx context.Context) error {
 				// Ideally would report user errors to the workflow in some way.
 				//}
 
+				// TODO also, to maintain compatibility we could ignore trigger.ErrRegistrationResponseTimeout error, or alternatively
+				// set the registrationResponseTimeout to 0
+
 				e.logger().Errorw("Trigger registration failed", "triggerID", sub.Id, "err", regErr)
 				e.metrics.With(platform.KeyTriggerID, sub.Id).IncrementRegisterTriggerFailureCounter(gCtx)
 				return fmt.Errorf("failed to register trigger %s: %w", sub.Id, regErr)
