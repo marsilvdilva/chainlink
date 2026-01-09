@@ -1,12 +1,7 @@
 package log
 
-import (
-	"encoding/hex"
-	"unicode"
-)
-
 // TODO this is duplicated from utils to minimise the PR changeset - will be deduped later
-
+/*
 const (
 	maxLoggedStringLen = 256
 )
@@ -24,3 +19,4 @@ func SanitizeLogString(s string) string {
 	}
 	return s + tooLongSuffix
 }
+*/

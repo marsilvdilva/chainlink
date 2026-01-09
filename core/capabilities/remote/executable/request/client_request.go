@@ -12,7 +12,6 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/log"
 	ragep2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -362,7 +361,7 @@ func (c *ClientRequest) sendResponse(response clientResponse) {
 	close(c.responseCh)
 	c.respSent = true
 	if response.Err != nil {
-		c.lggr.Warnw("received error response", "error", log.SanitizeLogString(response.Err.Error()))
+		c.lggr.Warnw("received error response", "error", remote.SanitizeLogString(response.Err.Error()))
 		return
 	}
 	c.lggr.Debugw("received OK response")
