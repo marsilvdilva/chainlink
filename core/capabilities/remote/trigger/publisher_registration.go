@@ -17,6 +17,22 @@ type triggerRegistrationRequest struct {
 	callerDonID uint32
 }
 
+func NewPublisherRegistration(lggr logger.Logger,
+	triggerID string,
+	workflowID string,
+	capabilityDonId uint32, // TODO verify that this not being dynamic is acceptable, given the initial registration is only active for a short period of time this should be ok?
+	capabilityID string,
+	dispatcher types.Dispatcher) *PublisherRegistration {
+	return &PublisherRegistration{
+		lggr:            lggr,
+		triggerID:       triggerID,
+		workflowID:      workflowID,
+		capabilityID:    capabilityID,
+		capabilityDonID: capabilityDonId,
+		dispatcher:      dispatcher,
+	}
+}
+
 type PublisherRegistration struct {
 	lggr       logger.Logger
 	dispatcher types.Dispatcher
@@ -37,22 +53,6 @@ type PublisherRegistration struct {
 	// TODO migrate error from string
 	registrationResult *types.Error
 	errorMessage       string
-}
-
-func NewPublisherRegistration(lggr logger.Logger,
-	triggerID string,
-	workflowID string,
-	capabilityDonId uint32, // TODO verify that this not being dynamic is acceptable, given the initial registration is only active for a short period of time this should be ok?
-	capabilityID string,
-	dispatcher types.Dispatcher) *PublisherRegistration {
-	return &PublisherRegistration{
-		lggr:            lggr,
-		triggerID:       triggerID,
-		workflowID:      workflowID,
-		capabilityID:    capabilityID,
-		capabilityDonID: capabilityDonId,
-		dispatcher:      dispatcher,
-	}
 }
 
 func (rm *PublisherRegistration) AddRequest(peerID p2ptypes.PeerID, callerDonID uint32) {

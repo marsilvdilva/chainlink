@@ -18,6 +18,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/log"
 
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
 	"github.com/smartcontractkit/chainlink/v2/core/config"
@@ -284,7 +285,7 @@ func (d *dispatcher) handleMessage(msg *p2ptypes.Message) {
 	receiver, ok := d.receivers[k]
 	d.mu.RUnlock()
 	if !ok {
-		d.lggr.Debugw("received message for unregistered capability or method", "capabilityId", SanitizeLogString(k.capID), "donId", k.donID, "method", k.methodName)
+		d.lggr.Debugw("received message for unregistered capability or method", "capabilityId", log.SanitizeLogString(k.capID), "donId", k.donID, "method", k.methodName)
 		d.tryRespondWithError(msg.Sender, body, types.Error_CAPABILITY_NOT_FOUND)
 		return
 	}

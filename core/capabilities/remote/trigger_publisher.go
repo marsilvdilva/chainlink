@@ -205,7 +205,7 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 		registration, exists := p.registrations[key]
 		if !exists {
 			registration = trigger.NewPublisherRegistration(p.lggr, req.TriggerID, req.Metadata.WorkflowID,
-				cfg.capDonInfo.ID, p.capabilityID, p.capMethodName, p.dispatcher)
+				cfg.capDonInfo.ID, p.capabilityID, p.dispatcher)
 			p.registrations[key] = registration
 		}
 		registration.AddRequest(sender, msg.CallerDonId)

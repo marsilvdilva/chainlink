@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/log"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote"
@@ -102,12 +103,12 @@ func TestToPeerID(t *testing.T) {
 }
 
 func TestSanitizeLogString(t *testing.T) {
-	require.Equal(t, "hello", remote.SanitizeLogString("hello"))
-	require.Equal(t, "[UNPRINTABLE] 0a", remote.SanitizeLogString("\n"))
+	require.Equal(t, "hello", log.SanitizeLogString("hello"))
+	require.Equal(t, "[UNPRINTABLE] 0a", log.SanitizeLogString("\n"))
 
 	longString := ""
 	for range 100 {
 		longString += "aa-aa-aa-"
 	}
-	require.Equal(t, longString[:256]+" [TRUNCATED]", remote.SanitizeLogString(longString))
+	require.Equal(t, longString[:256]+" [TRUNCATED]", log.SanitizeLogString(longString))
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/aggregation"
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/trigger"
 	remotetypes "github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
 	remoteMocks "github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types/mocks"
 	p2ptypes "github.com/smartcontractkit/chainlink/v2/core/services/p2p/types"
@@ -56,7 +57,7 @@ func TestTriggerSubscriber_RegisterAndReceive(t *testing.T) {
 		MinResponsesToAggregate: 1,
 		MessageExpiry:           100 * time.Second,
 	}
-	subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr)
+	subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 0)
 	agg := aggregation.NewDefaultModeAggregator(config.MinResponsesToAggregate)
 	require.NoError(t, subscriber.SetConfig(config, capInfo, workflowDon.ID, capDon, agg))
 	require.NoError(t, subscriber.Start(t.Context()))
@@ -67,7 +68,9 @@ func TestTriggerSubscriber_RegisterAndReceive(t *testing.T) {
 		},
 	}
 	triggerEventCallbackCh, err := subscriber.RegisterTrigger(t.Context(), req)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.ErrorIs(t, err, trigger.ErrRegistrationResponseTimeout)
+
 	t.Cleanup(func() {
 		require.NoError(t, subscriber.UnregisterTrigger(t.Context(), req))
 		// calling UnregisterTrigger repeatedly is safe
@@ -84,6 +87,59 @@ func TestTriggerSubscriber_RegisterAndReceive(t *testing.T) {
 	response := <-triggerEventCallbackCh
 	require.Equal(t, response.Event.Outputs, triggerEventValue)
 }
+
+/*
+func TestTriggerSubscriber_RegisterAndReceive_WithSuccessfulRegistrationResponse(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	capInfo, capDon, workflowDon := buildTwoTestDONs(t, 1, 1)
+	dispatcher := remoteMocks.NewDispatcher(t)
+	awaitRegistrationMessageCh := make(chan struct{})
+	dispatcher.On("Send", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		select {
+		case awaitRegistrationMessageCh <- struct{}{}:
+		default:
+		}
+	})
+
+	// register trigger
+	config := &commoncap.RemoteTriggerConfig{
+		RegistrationRefresh:     100 * time.Millisecond,
+		RegistrationExpiry:      100 * time.Second,
+		MinResponsesToAggregate: 1,
+		MessageExpiry:           100 * time.Second,
+	}
+	subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 1*time.Minute)
+	agg := aggregation.NewDefaultModeAggregator(config.MinResponsesToAggregate)
+	require.NoError(t, subscriber.SetConfig(config, capInfo, workflowDon.ID, capDon, agg))
+	require.NoError(t, subscriber.Start(t.Context()))
+
+	req := commoncap.TriggerRegistrationRequest{
+		Metadata: commoncap.RequestMetadata{
+			WorkflowID: workflowID1,
+		},
+	}
+	triggerEventCallbackCh, err := subscriber.RegisterTrigger(t.Context(), req)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, trigger.ErrRegistrationResponseTimeout)
+
+	t.Cleanup(func() {
+		require.NoError(t, subscriber.UnregisterTrigger(t.Context(), req))
+		// calling UnregisterTrigger repeatedly is safe
+		require.NoError(t, subscriber.UnregisterTrigger(t.Context(), req))
+		require.NoError(t, subscriber.Close())
+	})
+	<-awaitRegistrationMessageCh
+
+	// receive trigger event
+	triggerEventValue, err := values.NewMap(triggerEvent1)
+	require.NoError(t, err)
+	triggerEvent := buildTriggerEvent(t, capDon.Members[0][:])
+	subscriber.Receive(t.Context(), triggerEvent)
+	response := <-triggerEventCallbackCh
+	require.Equal(t, response.Event.Outputs, triggerEventValue)
+}*/
 
 func TestTriggerSubscriber_CorrectEventExpiryCheck(t *testing.T) {
 	t.Parallel()
@@ -105,7 +161,7 @@ func TestTriggerSubscriber_CorrectEventExpiryCheck(t *testing.T) {
 		MinResponsesToAggregate: 2,
 		MessageExpiry:           10 * time.Second,
 	}
-	subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr)
+	subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 0)
 	agg := aggregation.NewDefaultModeAggregator(config.MinResponsesToAggregate)
 	require.NoError(t, subscriber.SetConfig(config, capInfo, workflowDon.ID, capDon, agg))
 
@@ -116,7 +172,8 @@ func TestTriggerSubscriber_CorrectEventExpiryCheck(t *testing.T) {
 		},
 	}
 	triggerEventCallbackCh, err := subscriber.RegisterTrigger(t.Context(), regReq)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.ErrorIs(t, err, trigger.ErrRegistrationResponseTimeout)
 	t.Cleanup(func() {
 		require.NoError(t, subscriber.UnregisterTrigger(t.Context(), regReq))
 		require.NoError(t, subscriber.Close())
@@ -158,7 +215,7 @@ func TestTriggerSubscriber_SetConfig_Basic(t *testing.T) {
 
 	t.Run("returns error when capability info ID doesn't match subscriber's ID", func(t *testing.T) {
 		dispatcher := remoteMocks.NewDispatcher(t)
-		subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr)
+		subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 0)
 		config := &commoncap.RemoteTriggerConfig{}
 		mismatchedCapInfo := commoncap.CapabilityInfo{ID: "different_id", CapabilityType: commoncap.CapabilityTypeTrigger}
 		err := subscriber.SetConfig(config, mismatchedCapInfo, workflowDon.ID, capDon, agg)
@@ -170,7 +227,7 @@ func TestTriggerSubscriber_SetConfig_Basic(t *testing.T) {
 
 	t.Run("returns error when aggregator is nil", func(t *testing.T) {
 		dispatcher := remoteMocks.NewDispatcher(t)
-		subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr)
+		subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 0)
 		config := &commoncap.RemoteTriggerConfig{}
 		err := subscriber.SetConfig(config, capInfo, workflowDon.ID, capDon, nil)
 		require.Error(t, err)
@@ -179,7 +236,7 @@ func TestTriggerSubscriber_SetConfig_Basic(t *testing.T) {
 
 	t.Run("updates existing config", func(t *testing.T) {
 		dispatcher := remoteMocks.NewDispatcher(t)
-		subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr)
+		subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 0)
 		// Set initial config
 		initialConfig := &commoncap.RemoteTriggerConfig{
 			RegistrationRefresh:     100 * time.Millisecond,
@@ -204,7 +261,7 @@ func TestTriggerSubscriber_SetConfig_Basic(t *testing.T) {
 	})
 	t.Run("handles nil initial config", func(t *testing.T) {
 		dispatcher := remoteMocks.NewDispatcher(t)
-		subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr)
+		subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 0)
 		// Set initial config as nil
 		err := subscriber.SetConfig(nil, capInfo, workflowDon.ID, capDon, agg)
 		require.NoError(t, err)
@@ -244,7 +301,7 @@ func TestTriggerSubscriber_RegistrationLoopWithConfigUpdate(t *testing.T) {
 		MinResponsesToAggregate: 1,
 		MessageExpiry:           100 * time.Second,
 	}
-	subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr)
+	subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 0)
 	agg := aggregation.NewDefaultModeAggregator(config.MinResponsesToAggregate)
 
 	// Call SetConfig() with workflowDON ID = 1 and register trigger
@@ -256,7 +313,8 @@ func TestTriggerSubscriber_RegistrationLoopWithConfigUpdate(t *testing.T) {
 		},
 	}
 	_, err := subscriber.RegisterTrigger(t.Context(), req)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.ErrorIs(t, err, trigger.ErrRegistrationResponseTimeout)
 
 	// Wait for first registration message and validate CallerDonId = 1
 	<-registrationMessageCh

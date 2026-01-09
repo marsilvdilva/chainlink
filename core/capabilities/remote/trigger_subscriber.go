@@ -26,7 +26,7 @@ const (
 	// changed to return timeout error instead if we wanted to indicate that registration may have failed.  Current behaviour
 	// of the remote triggers is automatically resubscribe so the registration response is only to indicate success/failure of the registration
 	// request itself so that user registration errors (i.e. invalid arguments) can be handled appropriately.
-	registrationResponseTimeout = 10 * time.Second
+	deafultRegistrationResponseTimeout = 10 * time.Second
 )
 
 // TriggerSubscriber is a shim for remote trigger capabilities.
@@ -42,13 +42,14 @@ type triggerSubscriber struct {
 	dispatcher    types.Dispatcher
 	cfg           atomic.Pointer[dynamicConfig]
 
-	messageCache              *messagecache.MessageCache[triggerEventKey, p2ptypes.PeerID]
-	registrationResponseCache *messagecache.MessageCache[trigger.TriggerRegistrationKey, p2ptypes.PeerID]
-	registeredWorkflows       map[string]*trigger.SubscriberRegistration
-	mu                        sync.RWMutex // protects registeredWorkflows and messageCache
-	stopCh                    services.StopChan
-	wg                        sync.WaitGroup
-	lggr                      logger.Logger
+	messageCache                *messagecache.MessageCache[triggerEventKey, p2ptypes.PeerID]
+	registrationResponseCache   *messagecache.MessageCache[trigger.TriggerRegistrationKey, p2ptypes.PeerID]
+	registrationResponseTimeout time.Duration
+	registeredWorkflows         map[string]*trigger.SubscriberRegistration
+	mu                          sync.RWMutex // protects registeredWorkflows and messageCache
+	stopCh                      services.StopChan
+	wg                          sync.WaitGroup
+	lggr                        logger.Logger
 }
 
 type dynamicConfig struct {
@@ -80,16 +81,18 @@ const (
 	maxBatchedWorkflowIDs = 1000
 )
 
-func NewTriggerSubscriber(capabilityID string, capMethodName string, dispatcher types.Dispatcher, lggr logger.Logger) *triggerSubscriber {
+func NewTriggerSubscriber(capabilityID string, capMethodName string, dispatcher types.Dispatcher, lggr logger.Logger,
+	registrationResponseTimeout time.Duration) *triggerSubscriber {
 	return &triggerSubscriber{
-		capabilityID:              capabilityID,
-		capMethodName:             capMethodName,
-		dispatcher:                dispatcher,
-		messageCache:              messagecache.NewMessageCache[triggerEventKey, p2ptypes.PeerID](),
-		registrationResponseCache: messagecache.NewMessageCache[trigger.TriggerRegistrationKey, p2ptypes.PeerID](),
-		registeredWorkflows:       make(map[string]*trigger.SubscriberRegistration),
-		stopCh:                    make(services.StopChan),
-		lggr:                      logger.With(logger.Named(lggr, "TriggerSubscriber"), "capabilityID", capabilityID, "capMethodName", capMethodName),
+		capabilityID:                capabilityID,
+		capMethodName:               capMethodName,
+		dispatcher:                  dispatcher,
+		messageCache:                messagecache.NewMessageCache[triggerEventKey, p2ptypes.PeerID](),
+		registrationResponseCache:   messagecache.NewMessageCache[trigger.TriggerRegistrationKey, p2ptypes.PeerID](),
+		registrationResponseTimeout: registrationResponseTimeout,
+		registeredWorkflows:         make(map[string]*trigger.SubscriberRegistration),
+		stopCh:                      make(services.StopChan),
+		lggr:                        logger.With(logger.Named(lggr, "TriggerSubscriber"), "capabilityID", capabilityID, "capMethodName", capMethodName),
 	}
 }
 
@@ -155,7 +158,7 @@ func (s *triggerSubscriber) RegisterTrigger(ctx context.Context, request commonc
 	registration, ok := s.registeredWorkflows[request.Metadata.WorkflowID]
 
 	if !ok {
-		registration = trigger.NewSubscriberRegistration(s.lggr, rawRequest, s.registrationResponseCache, registrationResponseTimeout)
+		registration = trigger.NewSubscriberRegistration(s.lggr, rawRequest, s.registrationResponseCache, s.registrationResponseTimeout)
 		s.registeredWorkflows[request.Metadata.WorkflowID] = registration
 	} else {
 		registration.UpdateRequest(rawRequest)
