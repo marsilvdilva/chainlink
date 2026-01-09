@@ -435,6 +435,13 @@ func (e *Engine) runTriggerSubscriptionPhase(ctx context.Context) error {
 				// no Config needed - NoDAG uses Payload
 			})
 			if regErr != nil {
+				// TODO: distinguish user vs system errors here
+				//var capabilityError caperrors.Error
+				//if errors.As(err, &capabilityError) {
+				// Determine what to do based on type of error, i.e. different metrics for user vs system errors
+				// Ideally would report user errors to the workflow in some way.
+				//}
+
 				e.logger().Errorw("Trigger registration failed", "triggerID", sub.Id, "err", regErr)
 				e.metrics.With(platform.KeyTriggerID, sub.Id).IncrementRegisterTriggerFailureCounter(gCtx)
 				return fmt.Errorf("failed to register trigger %s: %w", sub.Id, regErr)
