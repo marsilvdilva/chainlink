@@ -95,7 +95,6 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 			sr.sendInitialRegistrationResponse(nil)
 		} else {
 			// Registration failed - send error response
-
 			// Is there a consensus error?  if so send that
 			lastErr := ""
 			for errStr, count := range errorToCount {
@@ -138,6 +137,11 @@ func (sr *SubscriberRegistration) AwaitInitialRegistrationResponse(ctx context.C
 
 	// Channel is only used once to await response, close after use
 	defer close(sr.initialRegistrationResponseChan)
+
+	// 0 timeout indicates that the caller does not wish to wait for the initial registration response
+	if sr.registrationResponseTimeout == 0 {
+		return sr.callback, nil
+	}
 
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, sr.registrationResponseTimeout)
 	defer cancel()

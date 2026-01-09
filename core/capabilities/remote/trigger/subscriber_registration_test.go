@@ -68,6 +68,20 @@ func TestSubscriberRegistration_SuccessfulRegistration(t *testing.T) {
 	require.Equal(t, responseCh, responseCh2)
 }
 
+func TestSubscriberRegistration_SuccessfulRegistration_ZeroTimeout(t *testing.T) {
+	lggr := logger.TestLogger(t)
+	ctx := t.Context()
+
+	// Zero timeout indicates the caller does not want to wait to registration responses, this effectively disables registration response handling
+	registration := trigger.NewSubscriberRegistration(lggr, []byte("rawRequest"), messagecache.NewMessageCache[trigger.TriggerRegistrationKey, p2ptypes.PeerID](),
+		0)
+
+	subscriberStopCh := make(chan struct{})
+	responseCh, err := registration.AwaitInitialRegistrationResponse(ctx, subscriberStopCh)
+	require.NoError(t, err)
+	require.NotNil(t, responseCh)
+}
+
 func TestSubscriberRegistration_UnsuccessfulRegistration_SameError(t *testing.T) {
 	lggr := logger.TestLogger(t)
 	ctx := t.Context()

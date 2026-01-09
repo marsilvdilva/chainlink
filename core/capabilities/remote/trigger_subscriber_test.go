@@ -88,58 +88,7 @@ func TestTriggerSubscriber_RegisterAndReceive(t *testing.T) {
 	require.Equal(t, response.Event.Outputs, triggerEventValue)
 }
 
-/*
-func TestTriggerSubscriber_RegisterAndReceive_WithSuccessfulRegistrationResponse(t *testing.T) {
-	t.Parallel()
-	lggr := logger.Test(t)
-	capInfo, capDon, workflowDon := buildTwoTestDONs(t, 1, 1)
-	dispatcher := remoteMocks.NewDispatcher(t)
-	awaitRegistrationMessageCh := make(chan struct{})
-	dispatcher.On("Send", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-		select {
-		case awaitRegistrationMessageCh <- struct{}{}:
-		default:
-		}
-	})
-
-	// register trigger
-	config := &commoncap.RemoteTriggerConfig{
-		RegistrationRefresh:     100 * time.Millisecond,
-		RegistrationExpiry:      100 * time.Second,
-		MinResponsesToAggregate: 1,
-		MessageExpiry:           100 * time.Second,
-	}
-	subscriber := remote.NewTriggerSubscriber(capInfo.ID, "method", dispatcher, lggr, 1*time.Minute)
-	agg := aggregation.NewDefaultModeAggregator(config.MinResponsesToAggregate)
-	require.NoError(t, subscriber.SetConfig(config, capInfo, workflowDon.ID, capDon, agg))
-	require.NoError(t, subscriber.Start(t.Context()))
-
-	req := commoncap.TriggerRegistrationRequest{
-		Metadata: commoncap.RequestMetadata{
-			WorkflowID: workflowID1,
-		},
-	}
-	triggerEventCallbackCh, err := subscriber.RegisterTrigger(t.Context(), req)
-
-	require.Error(t, err)
-	require.ErrorIs(t, err, trigger.ErrRegistrationResponseTimeout)
-
-	t.Cleanup(func() {
-		require.NoError(t, subscriber.UnregisterTrigger(t.Context(), req))
-		// calling UnregisterTrigger repeatedly is safe
-		require.NoError(t, subscriber.UnregisterTrigger(t.Context(), req))
-		require.NoError(t, subscriber.Close())
-	})
-	<-awaitRegistrationMessageCh
-
-	// receive trigger event
-	triggerEventValue, err := values.NewMap(triggerEvent1)
-	require.NoError(t, err)
-	triggerEvent := buildTriggerEvent(t, capDon.Members[0][:])
-	subscriber.Receive(t.Context(), triggerEvent)
-	response := <-triggerEventCallbackCh
-	require.Equal(t, response.Event.Outputs, triggerEventValue)
-}*/
+// TODO add some tests here that utilise the registration response (ie non-zero registration response timeout and return correct errors in the responses)
 
 func TestTriggerSubscriber_CorrectEventExpiryCheck(t *testing.T) {
 	t.Parallel()

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+
 	"github.com/smartcontractkit/libocr/ragep2p"
 	ragetypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
@@ -522,6 +523,7 @@ func (w *launcher) addRemoteCapability(ctx context.Context, cid string, capabili
 					"", // empty method name for v1
 					w.dispatcher,
 					w.lggr,
+					0, // Increase this to enable registration response handling
 				)
 				w.cachedShims.triggerSubscribers[shimKey] = triggerCap
 			}
@@ -905,7 +907,8 @@ func (w *launcher) addRemoteCapabilityV2(ctx context.Context, capID string, meth
 		if config.RemoteTriggerConfig != nil { // trigger
 			sub, alreadyExists := w.cachedShims.triggerSubscribers[shimKey]
 			if !alreadyExists {
-				sub = remote.NewTriggerSubscriber(capID, method, w.dispatcher, w.lggr)
+				sub = remote.NewTriggerSubscriber(capID, method, w.dispatcher, w.lggr,
+					0) // Increase this to enable registration response handling
 				cc.SetTriggerSubscriber(method, sub)
 				// add to cachedShims later, only after startNewShim succeeds
 			}
