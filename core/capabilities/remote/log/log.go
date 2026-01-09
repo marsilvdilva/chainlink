@@ -5,7 +5,7 @@ import (
 	"unicode"
 )
 
-// TODO move this back into utils and move the utils package to utils subpackage
+// TODO this is duplicated from utils to minimise the PR changeset - will be deduped later
 
 const (
 	maxLoggedStringLen = 256

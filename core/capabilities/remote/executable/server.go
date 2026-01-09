@@ -12,8 +12,7 @@ import (
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/log"
-
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/executable/request"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/validation"
@@ -248,13 +247,13 @@ func (r *server) Receive(ctx context.Context, msg *types.MessageBody) {
 	switch msg.Method {
 	case types.MethodExecute:
 	default:
-		r.lggr.Errorw("received request for unsupported method type", "method", log.SanitizeLogString(msg.Method))
+		r.lggr.Errorw("received request for unsupported method type", "method", remote.SanitizeLogString(msg.Method))
 		return
 	}
 
 	messageID, err := GetMessageID(msg)
 	if err != nil {
-		r.lggr.Errorw("invalid message id", "err", err, "id", log.SanitizeLogString(string(msg.MessageId)))
+		r.lggr.Errorw("invalid message id", "err", err, "id", remote.SanitizeLogString(string(msg.MessageId)))
 		return
 	}
 

@@ -12,7 +12,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/log"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/trigger"
 
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/messagecache"
@@ -249,7 +248,7 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 			registration, found := s.registeredWorkflows[workflowID]
 			s.mu.RUnlock()
 			if !found {
-				s.lggr.Errorw("received message for unregistered workflow", "workflowID", log.SanitizeLogString(workflowID), "sender", sender)
+				s.lggr.Errorw("received message for unregistered workflow", "workflowID", SanitizeLogString(workflowID), "sender", sender)
 				continue
 			}
 			key := triggerEventKey{
@@ -278,13 +277,13 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 		registration, found := s.registeredWorkflows[meta.WorkflowId]
 		s.mu.RUnlock()
 		if !found {
-			s.lggr.Errorw("received trigger registration response message for unregistered workflow", "workflowID", log.SanitizeLogString(meta.WorkflowId), "sender", sender)
+			s.lggr.Errorw("received trigger registration response message for unregistered workflow", "workflowID", SanitizeLogString(meta.WorkflowId), "sender", sender)
 			return
 		}
 
 		registration.HandleTriggerRegistrationResponse(sender, msg, cfg.remoteConfig.MinResponsesToAggregate, cfg.remoteConfig.MessageExpiry.Milliseconds(), cfg.capDonInfo.F)
 	} else {
-		s.lggr.Errorw("received trigger event with unknown method", "method", log.SanitizeLogString(msg.Method), "sender", sender, "err", log.SanitizeLogString(msg.ErrorMsg))
+		s.lggr.Errorw("received trigger event with unknown method", "method", SanitizeLogString(msg.Method), "sender", sender, "err", SanitizeLogString(msg.ErrorMsg))
 	}
 }
 

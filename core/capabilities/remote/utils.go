@@ -3,13 +3,19 @@ package remote
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"unicode"
 
 	"google.golang.org/protobuf/proto"
 
 	remotetypes "github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
 	p2ptypes "github.com/smartcontractkit/chainlink/v2/core/services/p2p/types"
+)
+
+const (
+	maxLoggedStringLen = 256
 )
 
 func ValidateMessage(msg *p2ptypes.Message, expectedReceiver p2ptypes.PeerID) (*remotetypes.MessageBody, error) {
@@ -47,4 +53,18 @@ func ToPeerID(peerID []byte) (p2ptypes.PeerID, error) {
 	var id p2ptypes.PeerID
 	copy(id[:], peerID)
 	return id, nil
+}
+
+func SanitizeLogString(s string) string {
+	tooLongSuffix := ""
+	if len(s) > maxLoggedStringLen {
+		s = s[:maxLoggedStringLen]
+		tooLongSuffix = " [TRUNCATED]"
+	}
+	for i := 0; i < len(s); i++ {
+		if !unicode.IsPrint(rune(s[i])) {
+			return "[UNPRINTABLE] " + hex.EncodeToString([]byte(s)) + tooLongSuffix
+		}
+	}
+	return s + tooLongSuffix
 }
