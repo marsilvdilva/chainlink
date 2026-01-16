@@ -48,7 +48,7 @@ require (
 	github.com/smartcontractkit/chain-selectors v1.0.89
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20251212131933-e5e85d6fa4d3
 	github.com/smartcontractkit/chainlink-automation v0.8.1
-	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20260116193815-8f07a8c05d11
+	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20260116223514-5d2187031940
 	github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250912190424-fd2e35d7deb5
 	github.com/smartcontractkit/chainlink-ccip/chains/solana/gobindings v0.0.0-20250912190424-fd2e35d7deb5
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20260114142648-bd9e1b483e96
