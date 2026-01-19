@@ -27,6 +27,8 @@ replace github.com/smartcontractkit/chainlink/system-tests/tests/smoke/cre/httpa
 
 replace github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/consensus => ./regression/cre/consensus
 
+replace github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/evm/logtrigger-negative => ./regression/cre/evm/logtrigger-negative
+
 replace github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/evm/evmread-negative => ./regression/cre/evm/evmread-negative
 
 replace github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/evm/evmwrite-negative => ./regression/cre/evm/evmwrite-negative
