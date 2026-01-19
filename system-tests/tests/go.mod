@@ -73,6 +73,7 @@ require (
 	github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/consensus v0.0.0-20251008094352-f74459c46e8c
 	github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/evm/evmread-negative v0.0.0-20251008094352-f74459c46e8c
 	github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/evm/evmwrite-negative v0.0.0-20251008094352-f74459c46e8c
+	github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/evm/logtrigger-negative v0.0.0-20251008094352-f74459c46e8c
 	github.com/smartcontractkit/chainlink/system-tests/tests/regression/cre/http v0.0.0-20251008094352-f74459c46e8c
 	github.com/smartcontractkit/chainlink/system-tests/tests/smoke/cre/evm/evmread v0.0.0-20251008094352-f74459c46e8c
 	github.com/smartcontractkit/chainlink/system-tests/tests/smoke/cre/evm/logtrigger v0.0.0-00010101000000-000000000000
