@@ -1,6 +1,7 @@
 package ccipdata
 
 import (
+	"math/big"
 	"testing"
 	"time"
 
@@ -145,8 +146,28 @@ func TestFilters(t *testing.T) {
 		chainID := testutils.NewRandomEVMChainID()
 		db := pgtest.NewSqlxDB(t)
 		o := logpoller.NewORM(chainID, db, lggr)
-		ec := simulated.NewBackend(map[common.Address]types.Account{}, simulated.WithBlockGasLimit(10e6))
-		esc := client.NewSimulatedBackendClient(t, ec, chainID)
+		// Use NewSimulation helper which sets up a backend with a funded account
+		auth, esc := NewSimulation(t)
+		backend := esc.Backend()
+		ec := backend.(*simulated.Backend)
+
+		// Pre-deploy a contract in genesis alloc so we have a contract address (not EOA)
+		// Minimal contract bytecode that's valid: just return empty
+		minimalContractCode := []byte{0x60, 0x00, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3}
+		transmitter := utils.RandomAddress()
+		// Create a new backend with the contract pre-deployed
+		genesisAlloc := types.GenesisAlloc{
+			auth.From: {
+				Balance: big.NewInt(0).Mul(big.NewInt(3), big.NewInt(1e18)),
+			},
+			transmitter: {
+				Code:    minimalContractCode,
+				Balance: big.NewInt(0),
+			},
+		}
+		ec = simulated.NewBackend(genesisAlloc, simulated.WithBlockGasLimit(10e6))
+		esc = client.NewSimulatedBackendClient(t, ec, chainID)
+
 		lpOpts := logpoller.Opts{
 			PollPeriod:               1 * time.Hour,
 			FinalityDepth:            1,
@@ -162,7 +183,6 @@ func TestFilters(t *testing.T) {
 
 		jobID1 := "job-1"
 		jobID2 := "job-2"
-		transmitter := utils.RandomAddress()
 
 		f1 := logpoller.FilterName("USDC message sent", jobID1, transmitter.Hex())
 		f2 := logpoller.FilterName("USDC message sent", jobID2, transmitter.Hex())
