@@ -147,10 +147,7 @@ func TestFilters(t *testing.T) {
 		db := pgtest.NewSqlxDB(t)
 		o := logpoller.NewORM(chainID, db, lggr)
 		// Use NewSimulation helper which sets up a backend with a funded account
-		auth, esc := NewSimulation(t)
-		backend := esc.Backend()
-		ec := backend.(*simulated.Backend)
-
+		auth, _ := NewSimulation(t)
 		// Pre-deploy a contract in genesis alloc so we have a contract address (not EOA)
 		// Minimal contract bytecode that's valid: just return empty
 		minimalContractCode := []byte{0x60, 0x00, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3}
@@ -165,8 +162,8 @@ func TestFilters(t *testing.T) {
 				Balance: big.NewInt(0),
 			},
 		}
-		ec = simulated.NewBackend(genesisAlloc, simulated.WithBlockGasLimit(10e6))
-		esc = client.NewSimulatedBackendClient(t, ec, chainID)
+		ec := simulated.NewBackend(genesisAlloc, simulated.WithBlockGasLimit(10e6))
+		esc := client.NewSimulatedBackendClient(t, ec, chainID)
 
 		lpOpts := logpoller.Opts{
 			PollPeriod:               1 * time.Hour,
