@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
 
 	p2ptypes "github.com/smartcontractkit/chainlink/v2/core/services/p2p/types"
@@ -18,24 +18,27 @@ type triggerRegistrationRequest struct {
 }
 
 func NewPublisherRegistration(lggr logger.Logger,
+	publisherStopCh services.StopChan,
 	triggerID string,
 	workflowID string,
 	capabilityDonId uint32, // TODO verify that this not being dynamic is acceptable, given the initial registration is only active for a short period of time this should be ok?
 	capabilityID string,
-	dispatcher types.Dispatcher) *PublisherRegistration {
+	sendToDispatcher func(peerID p2ptypes.PeerID, msgBody *types.MessageBody) error) *PublisherRegistration {
 	return &PublisherRegistration{
-		lggr:            lggr,
-		triggerID:       triggerID,
-		workflowID:      workflowID,
-		capabilityID:    capabilityID,
-		capabilityDonID: capabilityDonId,
-		dispatcher:      dispatcher,
+		lggr:             lggr,
+		publisherStopCh:  publisherStopCh,
+		triggerID:        triggerID,
+		workflowID:       workflowID,
+		capabilityID:     capabilityID,
+		capabilityDonID:  capabilityDonId,
+		sendToDispatcher: sendToDispatcher,
 	}
 }
 
 type PublisherRegistration struct {
-	lggr       logger.Logger
-	dispatcher types.Dispatcher
+	lggr             logger.Logger
+	publisherStopCh  services.StopChan
+	sendToDispatcher func(peerID p2ptypes.PeerID, msgBody *types.MessageBody) error
 
 	triggerID       string
 	workflowID      string
@@ -64,7 +67,8 @@ func (rm *PublisherRegistration) AddRequest(peerID p2ptypes.PeerID, callerDonID 
 
 }
 
-func (rm *PublisherRegistration) RegisterOnUnderlyingTrigger(ctx context.Context, cancelCtx context.CancelFunc, underlyingTrigger commoncap.TriggerCapability, request commoncap.TriggerRegistrationRequest) (<-chan commoncap.TriggerResponse, error) {
+func (rm *PublisherRegistration) RegisterOnUnderlyingTrigger(underlyingTrigger commoncap.TriggerCapability, request commoncap.TriggerRegistrationRequest) (<-chan commoncap.TriggerResponse, error) {
+	ctx, cancelCtx := rm.publisherStopCh.NewCtx()
 
 	if rm.registrationResult != nil {
 		// Should only ever attempt registration on the underlying trigger once for a given publisher registration instance
@@ -85,10 +89,7 @@ func (rm *PublisherRegistration) RegisterOnUnderlyingTrigger(ctx context.Context
 		cancelCtx()
 
 		errMsg = "failed to register trigger"
-		var capError caperrors.Error
-		if errors.As(err, &capError) {
-			errMsg = capError.SerializeToRemoteString()
-		}
+
 	}
 
 	rm.registrationResult = &result
@@ -112,7 +113,7 @@ func (rm *PublisherRegistration) UnregisterFromUnderlyingTrigger(ctx context.Con
 
 // sendTriggerRegistrationResponse sends a trigger registration response back to the caller DON with an optional error message
 func (rm *PublisherRegistration) sendTriggerRegistrationResponse(peerID p2ptypes.PeerID, callerDonID uint32, errMsg string) {
-	
+
 	var errMsgPtr *string
 	if errMsg != "" {
 		errMsgPtr = &errMsg
@@ -131,7 +132,7 @@ func (rm *PublisherRegistration) sendTriggerRegistrationResponse(peerID p2ptypes
 			},
 		},
 	}
-	err := rm.dispatcher.Send(peerID, registrationResponseMessage)
+	err := rm.sendToDispatcher(peerID, registrationResponseMessage)
 	if err != nil {
 		rm.lggr.Errorw("failed to send trigger registration response", "peerID", peerID, "err", err)
 	}

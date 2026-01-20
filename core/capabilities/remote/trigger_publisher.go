@@ -202,8 +202,8 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 		p.messageCache.Insert(key, sender, nowMs, msg.Payload)
 		registration, exists := p.registrations[key]
 		if !exists {
-			registration = trigger.NewPublisherRegistration(p.lggr, req.TriggerID, req.Metadata.WorkflowID,
-				cfg.capDonInfo.ID, p.capabilityID, p.dispatcher)
+			registration = trigger.NewPublisherRegistration(p.lggr, p.stopCh, req.TriggerID, req.Metadata.WorkflowID,
+				cfg.capDonInfo.ID, p.capabilityID, p.dispatcher.Send)
 			p.registrations[key] = registration
 		}
 		registration.AddRequest(sender, msg.CallerDonId)
@@ -226,8 +226,7 @@ func (p *triggerPublisher) Receive(_ context.Context, msg *types.MessageBody) {
 			return
 		}
 
-		ctx, cancel := p.stopCh.NewCtx()
-		callbackCh, err := registration.RegisterOnUnderlyingTrigger(ctx, cancel, cfg.underlying, unmarshalled)
+		callbackCh, err := registration.RegisterOnUnderlyingTrigger(cfg.underlying, unmarshalled)
 
 		if err == nil {
 			p.wg.Add(1)
