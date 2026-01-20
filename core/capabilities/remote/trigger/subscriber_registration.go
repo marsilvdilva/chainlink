@@ -54,7 +54,7 @@ func NewSubscriberRegistration(lggr logger.Logger, rawRequest []byte,
 }
 
 func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2ptypes.PeerID, msg *types.MessageBody, minResponseToAggregate uint32,
-	messageExpiryMilliseconds int64, capDonF uint8) {
+	messageExpiryMilliseconds int64, publisherNodeCount int) {
 	meta := msg.GetTriggerRegistrationMetadata()
 	if meta == nil {
 		sr.lggr.Errorw("received message with invalid trigger metadata", "sender", sender)
@@ -72,11 +72,10 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 		sr.registrationResponseCache.Insert(key, sender, nowMs, nil)
 	}
 
-	// TODO check min responses to aggregate, is it 2f+1, will it always be greater that cap don f +1 ?  (why is f number not being used here, or is it effectively used to define min responses?)
 	ready, registrationResponses := sr.registrationResponseCache.Ready(key, minResponseToAggregate, nowMs-messageExpiryMilliseconds, true)
 
 	if ready {
-		var successfulRegistrationCount uint8
+		var successfulRegistrationCount uint32
 		var totalErrorCount int
 
 		// aggregate errors by message
@@ -91,7 +90,7 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 			}
 		}
 
-		if successfulRegistrationCount >= (capDonF + 1) {
+		if successfulRegistrationCount >= minResponseToAggregate {
 			// Successful registration
 			sr.lggr.Infow("successful trigger registration", "triggerID", meta.TriggerId, "sender", sender)
 			sr.sendInitialRegistrationResponse(nil)
@@ -100,7 +99,7 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 			// Is there a consensus error?  if so send that
 			lastErr := ""
 			for errStr, count := range errorToCount {
-				if count >= int(capDonF+1) {
+				if uint32(count) >= minResponseToAggregate {
 					sr.sendInitialRegistrationResponse(errors.New(errStr))
 					return
 				}
@@ -108,8 +107,14 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 				lastErr = errStr
 			}
 
-			// If there is no consensus error, return a generic error message
-			sr.sendInitialRegistrationResponse(fmt.Errorf("received %d errors, last error %s : %s", totalErrorCount, msg.Error, log.SanitizeLogString(lastErr)))
+			// This check on when to give up waiting for minResponseToAggregate identical errors assumes that all received
+			// errors so far, and any future that will be received are and will be distinct.  It's the same logic
+			// used to aggregate errors for remote executable capabilities.  For the purposes of error handling it is
+			// sufficient.
+			if totalErrorCount >= publisherNodeCount-int(minResponseToAggregate)+1 {
+				// There is no consensus error, return a generic error message
+				sr.sendInitialRegistrationResponse(fmt.Errorf("received %d errors, last error %s : %s", totalErrorCount, msg.Error, log.SanitizeLogString(lastErr)))
+			}
 		}
 	}
 }

@@ -273,6 +273,10 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 		}
 	} else if msg.Method == types.RegisterTriggerResponse {
 		meta := msg.GetTriggerRegistrationMetadata()
+		if meta == nil {
+			s.lggr.Errorw("received trigger response message with nil trigger registration metadata", "sender", sender)
+			return
+		}
 		s.mu.RLock()
 		registration, found := s.registeredWorkflows[meta.WorkflowId]
 		s.mu.RUnlock()
@@ -281,7 +285,8 @@ func (s *triggerSubscriber) Receive(_ context.Context, msg *types.MessageBody) {
 			return
 		}
 
-		registration.HandleTriggerRegistrationResponse(sender, msg, cfg.remoteConfig.MinResponsesToAggregate, cfg.remoteConfig.MessageExpiry.Milliseconds(), cfg.capDonInfo.F)
+		registration.HandleTriggerRegistrationResponse(sender, msg, cfg.remoteConfig.MinResponsesToAggregate, cfg.remoteConfig.MessageExpiry.Milliseconds(),
+			len(cfg.capDonInfo.Members))
 	} else {
 		s.lggr.Errorw("received trigger event with unknown method", "method", SanitizeLogString(msg.Method), "sender", sender, "err", SanitizeLogString(msg.ErrorMsg))
 	}

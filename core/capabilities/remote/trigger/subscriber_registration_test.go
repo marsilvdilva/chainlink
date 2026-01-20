@@ -50,11 +50,12 @@ func TestSubscriberRegistration_SuccessfulRegistration(t *testing.T) {
 
 	go func() {
 		capDonF := uint8(1)
-		minResponsesToAggregate := uint32(2*capDonF + 1)
+		minResponsesToAggregate := uint32(capDonF + 1)
+		numberOfCapabilityNodes := int(capDonF*2 + 1)
 		messageExpiryMillis := int64(60000)
-		registration.HandleTriggerRegistrationResponse(peers[0], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
-		registration.HandleTriggerRegistrationResponse(peers[1], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
-		registration.HandleTriggerRegistrationResponse(peers[2], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
+		registration.HandleTriggerRegistrationResponse(peers[0], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
+		registration.HandleTriggerRegistrationResponse(peers[1], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
+		registration.HandleTriggerRegistrationResponse(peers[2], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
 	}()
 
 	subscriberStopCh := make(chan struct{})
@@ -112,11 +113,12 @@ func TestSubscriberRegistration_UnsuccessfulRegistration_SameError(t *testing.T)
 
 	go func() {
 		capDonF := uint8(1)
-		minResponsesToAggregate := uint32(2*capDonF + 1)
+		minResponsesToAggregate := uint32(capDonF + 1)
+		numberOfCapabilityNodes := int(capDonF*2 + 1)
 		messageExpiryMillis := int64(60000)
-		registration.HandleTriggerRegistrationResponse(peers[0], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
-		registration.HandleTriggerRegistrationResponse(peers[1], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
-		registration.HandleTriggerRegistrationResponse(peers[2], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
+		registration.HandleTriggerRegistrationResponse(peers[0], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
+		registration.HandleTriggerRegistrationResponse(peers[1], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
+		registration.HandleTriggerRegistrationResponse(peers[2], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
 	}()
 
 	subscriberStopCh := make(chan struct{})
@@ -150,19 +152,19 @@ func TestSubscriberRegistration_UnsuccessfulRegistration_MixedErrors(t *testing.
 
 	go func() {
 		capDonF := uint8(1)
-		minResponsesToAggregate := uint32(2*capDonF + 1)
+		minResponsesToAggregate := uint32(capDonF + 1)
+		numberOfCapabilityNodes := int(capDonF*2 + 1)
 		messageExpiryMillis := int64(60000)
-		registration.HandleTriggerRegistrationResponse(peers[0], createRegisterResponseMessageWithError(errMsg1), minResponsesToAggregate, messageExpiryMillis, capDonF)
-		registration.HandleTriggerRegistrationResponse(peers[1], createRegisterResponseMessageWithError(errMsg2), minResponsesToAggregate, messageExpiryMillis, capDonF)
-		registration.HandleTriggerRegistrationResponse(peers[2], createRegisterResponseMessageWithError(errMsg3), minResponsesToAggregate, messageExpiryMillis, capDonF)
+		registration.HandleTriggerRegistrationResponse(peers[0], createRegisterResponseMessageWithError(errMsg1), minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
+		registration.HandleTriggerRegistrationResponse(peers[1], createRegisterResponseMessageWithError(errMsg2), minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
+		registration.HandleTriggerRegistrationResponse(peers[2], createRegisterResponseMessageWithError(errMsg3), minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
 	}()
 
 	subscriberStopCh := make(chan struct{})
 	responseCh, err := registration.AwaitInitialRegistrationResponse(ctx, subscriberStopCh)
 	require.Error(t, err)
 	require.NotNil(t, responseCh)
-	require.Contains(t, err.Error(), "received 3 errors")
-	require.Contains(t, err.Error(), errMsg3)
+	require.Contains(t, err.Error(), "received 2 errors, last error OK : its broken2")
 
 	// Ensure that the second wait for response returns immediately, as it not the initial registration it should just return the response channel and no error
 	responseCh2, err := registration.AwaitInitialRegistrationResponse(ctx, subscriberStopCh)
@@ -215,10 +217,10 @@ func TestSubscriberRegistration_Timesout(t *testing.T) {
 
 	go func() {
 		capDonF := uint8(1)
-		minResponsesToAggregate := uint32(2*capDonF + 1)
+		minResponsesToAggregate := uint32(capDonF + 1)
+		numberOfCapabilityNodes := int(capDonF*2 + 1)
 		messageExpiryMillis := int64(60000)
-		registration.HandleTriggerRegistrationResponse(peers[0], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
-		registration.HandleTriggerRegistrationResponse(peers[1], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
+		registration.HandleTriggerRegistrationResponse(peers[0], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
 	}()
 
 	subscriberStopCh := make(chan struct{})
@@ -263,11 +265,11 @@ func TestSubscriberRegistration_InsufficientResponses(t *testing.T) {
 
 	go func() {
 		capDonF := uint8(1)
-		minResponsesToAggregate := uint32(2*capDonF + 1)
+		minResponsesToAggregate := uint32(capDonF + 1)
+		numberOfCapabilityNodes := int(capDonF*2 + 1)
 		messageExpiryMillis := int64(60000)
-		registration.HandleTriggerRegistrationResponse(peers[0], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
-		registration.HandleTriggerRegistrationResponse(peers[1], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, capDonF)
-
+		registration.HandleTriggerRegistrationResponse(peers[0], registrationResponseMessage, minResponsesToAggregate, messageExpiryMillis, numberOfCapabilityNodes)
+		
 		// Simulate insufficient responses by not sending the third response
 		// Cancel the context to simulate timeout or cancellation
 		cancel()

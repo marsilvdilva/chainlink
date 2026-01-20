@@ -50,7 +50,6 @@ type PublisherRegistration struct {
 
 	registrationRequests []triggerRegistrationRequest
 
-	// TODO migrate error from string
 	registrationResult *types.Error
 	errorMessage       string
 }
@@ -113,8 +112,7 @@ func (rm *PublisherRegistration) UnregisterFromUnderlyingTrigger(ctx context.Con
 
 // sendTriggerRegistrationResponse sends a trigger registration response back to the caller DON with an optional error message
 func (rm *PublisherRegistration) sendTriggerRegistrationResponse(peerID p2ptypes.PeerID, callerDonID uint32, errMsg string) {
-
-	// TODO migrate to using an error on the registration metadata instead of error string
+	
 	var errMsgPtr *string
 	if errMsg != "" {
 		errMsgPtr = &errMsg
