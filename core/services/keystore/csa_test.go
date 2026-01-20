@@ -2,6 +2,7 @@ package keystore_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	kslib "github.com/smartcontractkit/chainlink-common/keystore"
 	"github.com/smartcontractkit/chainlink/v2/core/internal/cltest"
 	"github.com/smartcontractkit/chainlink/v2/core/internal/testutils"
 	"github.com/smartcontractkit/chainlink/v2/core/internal/testutils/pgtest"
@@ -176,4 +178,54 @@ func Test_CSAKeyStore_E2E(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, keys, 1)
 	})
+}
+
+func Test_CSAKeyStore_KeystoreLibCompatibility(t *testing.T) {
+	ks, err := kslib.LoadKeystore(t.Context(), kslib.NewMemoryStorage(), "my-password")
+	require.NoError(t, err)
+
+	cresp, err := ks.CreateKeys(t.Context(), kslib.CreateKeysRequest{
+		Keys: []kslib.CreateKeyRequest{
+			{
+				KeyName: "csa-key",
+				KeyType: kslib.Ed25519,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	fmt.Printf("Generated CSA public key: %x\n", cresp.Keys[0].KeyInfo.PublicKey)
+
+	resp, err := ks.ExportKeys(t.Context(), kslib.ExportKeysRequest{
+		Keys: []kslib.ExportKeyParam{
+			{
+				KeyName: "csa-key",
+				Enc: kslib.EncryptionParams{
+					Password:     "my-password",
+					ScryptParams: kslib.DefaultScryptParams,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	env := csakey.Envelope{
+		Format: "chainlink-common/Keystore",
+		Data:   resp.Keys[0].Data,
+	}
+
+	b, err := json.Marshal(env)
+	require.NoError(t, err)
+
+	db := pgtest.NewSqlxDB(t)
+	keyStore := keystore.ExposedNewMaster(t, db)
+	require.NoError(t, keyStore.Unlock(testutils.Context(t), cltest.Password))
+
+	oks := keyStore.CSA()
+
+	csaKey, err := oks.Import(t.Context(), b, "my-password")
+	require.NoError(t, err)
+
+	fmt.Printf("Imported CSA public key: %s\n", csaKey.PublicKeyString())
+	assert.True(t, false)
 }

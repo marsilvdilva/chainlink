@@ -1,15 +1,33 @@
 package csakey
 
 import (
+	"encoding/json"
+	"errors"
+
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 
+	"github.com/smartcontractkit/chainlink-common/keystore/coreshim"
 	"github.com/smartcontractkit/chainlink/v2/core/services/keystore/internal"
 	"github.com/smartcontractkit/chainlink/v2/core/utils"
 )
 
 const keyTypeIdentifier = "CSA"
 
+type Envelope struct {
+	Format string
+	Data   json.RawMessage
+}
+
 func FromEncryptedJSON(keyJSON []byte, password string) (KeyV2, error) {
+	data, err := coreshim.ImportCSAKey(keyJSON, password)
+	if err == nil {
+		return KeyFor(internal.NewRaw(data)), nil
+	}
+
+	if !errors.Is(err, coreshim.ErrInvalidExportFormat) {
+		return KeyV2{}, err
+	}
+
 	return internal.FromEncryptedJSON(
 		keyTypeIdentifier,
 		keyJSON,
