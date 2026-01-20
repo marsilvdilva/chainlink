@@ -329,8 +329,11 @@ func TestORM(t *testing.T) {
 
 	t.Run("it creates and deletes records for blockheaderfeeder jobs", func(t *testing.T) {
 		ctx := testutils.Context(t)
+		// at least one coordinator address to satisfy the validation DB constraint
 		bhsJob, err := blockheaderfeeder.ValidatedSpec(
-			testspecs.GenerateBlockHeaderFeederSpec(testspecs.BlockHeaderFeederSpecParams{}).Toml())
+			testspecs.GenerateBlockHeaderFeederSpec(testspecs.BlockHeaderFeederSpecParams{
+				CoordinatorV2Address: "0x0000000000000000000000000000000000000001",
+			}).Toml())
 		require.NoError(t, err)
 
 		err = orm.CreateJob(ctx, &bhsJob)
