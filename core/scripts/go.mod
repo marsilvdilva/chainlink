@@ -19,7 +19,7 @@ replace github.com/smartcontractkit/chainlink/core/scripts/cre/environment/examp
 // Using a separate `require` here to avoid surrounding line changes
 // creating potential merge conflicts.
 require (
-	github.com/smartcontractkit/chainlink/deployment v0.0.0-20251021194914-c0e3fec1a97c
+	github.com/smartcontractkit/chainlink/deployment v0.0.0-20260121175524-a7a90b651709
 	github.com/smartcontractkit/chainlink/v2 v2.32.0
 )
 
@@ -58,9 +58,9 @@ require (
 	github.com/smartcontractkit/chainlink-testing-framework/framework/components/dockercompose v0.1.18
 	github.com/smartcontractkit/chainlink-testing-framework/lib v1.54.5
 	github.com/smartcontractkit/chainlink-testing-framework/seth v1.51.2
-	github.com/smartcontractkit/chainlink/core/scripts/cre/environment/examples/workflows/v1/proof-of-reserve/cron-based v0.0.0-20251020210257-0a6ec41648b4
-	github.com/smartcontractkit/chainlink/core/scripts/cre/environment/examples/workflows/v1/proof-of-reserve/web-trigger-based v0.0.0-20251020210257-0a6ec41648b4
-	github.com/smartcontractkit/chainlink/system-tests/lib v0.0.0-20251020210257-0a6ec41648b4
+	github.com/smartcontractkit/chainlink/core/scripts/cre/environment/examples/workflows/v1/proof-of-reserve/cron-based v0.0.0-20260121175524-a7a90b651709
+	github.com/smartcontractkit/chainlink/core/scripts/cre/environment/examples/workflows/v1/proof-of-reserve/web-trigger-based v0.0.0-20260121175524-a7a90b651709
+	github.com/smartcontractkit/chainlink/system-tests/lib v0.0.0-20260121175524-a7a90b651709
 	github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron v0.8.0
 	github.com/smartcontractkit/libocr v0.0.0-20251212213002-0a5e2f907dda
 	github.com/spf13/cobra v1.10.1
