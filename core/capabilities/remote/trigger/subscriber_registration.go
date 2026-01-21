@@ -107,7 +107,7 @@ func (sr *SubscriberRegistration) HandleTriggerRegistrationResponse(sender p2pty
 				lastErr = errStr
 			}
 
-			// This check on when to give up waiting for minResponseToAggregate identical errors assumes that all received
+			// The check on when to give up waiting for minResponseToAggregate identical errors assumes that all received
 			// errors so far, and any future that will be received are and will be distinct.  It's the same logic
 			// used to aggregate errors for remote executable capabilities.  For the purposes of error handling it is
 			// sufficient.
