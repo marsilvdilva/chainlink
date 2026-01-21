@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
@@ -88,8 +89,12 @@ func (rm *PublisherRegistration) RegisterOnUnderlyingTrigger(underlyingTrigger c
 		result = types.Error_INVALID_REQUEST
 		cancelCtx()
 
-		errMsg = "failed to register trigger"
-
+		var capErr caperrors.Error
+		if errors.As(err, &capErr) {
+			errMsg = capErr.SerializeToRemoteString()
+		} else {
+			errMsg = caperrors.NewPublicSystemError(err, caperrors.Unknown).SerializeToRemoteString()
+		}
 	}
 
 	rm.registrationResult = &result
