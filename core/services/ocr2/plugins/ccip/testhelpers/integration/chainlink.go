@@ -980,33 +980,20 @@ func (c *CCIPIntegrationTestHarness) SetupAndStartNodes(ctx context.Context, t *
 }
 
 func (c *CCIPIntegrationTestHarness) SetUpJobs(t *testing.T, bootstrapNode Node, configBlock uint64, jobParams CCIPJobSpecParams) {
-	// If USDCAttestationAPI is set, deploy a minimal contract on the source chain for SourceMessageTransmitterAddress
-	// This is required because LogPoller now validates that addresses are contracts
 	if jobParams.USDCAttestationAPI != "" && (jobParams.USDCConfig == nil || jobParams.USDCConfig.SourceMessageTransmitterAddress == (common.Address{})) {
-		// Deploy a minimal contract on the source chain
-		// Minimal contract bytecode: just return empty (valid contract bytecode)
+		// required because LogPoller now validates that addresses are actually contracts
 		minimalContractCode := []byte{0x60, 0x00, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3}
-		
-		// Get the nonce for the user
 		nonce, err := c.Source.Chain.Client().PendingNonceAt(context.Background(), c.Source.User.From)
 		require.NoError(t, err)
-		
-		// Create a transactor with the correct nonce
 		auth := *c.Source.User
 		auth.Nonce = big.NewInt(0).SetUint64(nonce)
-		
-		// Deploy the contract
 		_, tx, _, err := bind.DeployContract(&auth, abi.ABI{}, minimalContractCode, c.Source.Chain.Client())
 		require.NoError(t, err)
 		c.Source.Chain.Commit()
-		
-		// Get the contract address from the transaction receipt
 		receipt, err := c.Source.Chain.Client().TransactionReceipt(context.Background(), tx.Hash())
 		require.NoError(t, err)
 		require.Equal(t, types3.ReceiptStatusSuccessful, receipt.Status)
 		require.NotNil(t, receipt.ContractAddress)
-		
-		// Initialize USDCConfig if nil
 		if jobParams.USDCConfig == nil {
 			jobParams.USDCConfig = &ccipconfig.USDCConfig{
 				AttestationAPI:               jobParams.USDCAttestationAPI,
@@ -1015,7 +1002,6 @@ func (c *CCIPIntegrationTestHarness) SetUpJobs(t *testing.T, bootstrapNode Node,
 		}
 		jobParams.USDCConfig.SourceMessageTransmitterAddress = receipt.ContractAddress
 	}
-	
 	// Add the bootstrap job
 	c.Bootstrap.AddBootstrapJob(t, jobParams.BootstrapJob(c.Dest.CommitStore.Address().Hex()))
 	c.AddAllJobs(t, jobParams)
