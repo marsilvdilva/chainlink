@@ -146,10 +146,7 @@ func TestFilters(t *testing.T) {
 		chainID := testutils.NewRandomEVMChainID()
 		db := pgtest.NewSqlxDB(t)
 		o := logpoller.NewORM(chainID, db, lggr)
-		// Use NewSimulation helper which sets up a backend with a funded account
 		auth, _ := NewSimulation(t)
-		// Pre-deploy a contract in genesis alloc so we have a contract address (not EOA)
-		// Minimal contract bytecode that's valid: just return empty
 		minimalContractCode := []byte{0x60, 0x00, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3}
 		transmitter := utils.RandomAddress()
 		// Create a new backend with the contract pre-deployed
