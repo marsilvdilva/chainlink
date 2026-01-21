@@ -646,7 +646,7 @@ func (c *CCIPIntegrationTestHarness) ApproveJobSpecs(t *testing.T, jobParams CCI
 		managers, err := f.ListManagers(ctx)
 		require.NoError(t, err)
 		require.Len(t, managers, 1, "expected exactly one feeds manager")
-
+		sourceMessageTransmitterAddress := jobParams.USDCConfig.SourceMessageTransmitterAddress.String()
 		execSpec := c.jobSpecProposal(
 			t,
 			execSpecTemplate,
@@ -655,7 +655,7 @@ func (c *CCIPIntegrationTestHarness) ApproveJobSpecs(t *testing.T, jobParams CCI
 			1,
 			node.KeyBundle.ID(),
 			node.Transmitter.Hex(),
-			utils.RandomAddress().String(),
+			sourceMessageTransmitterAddress,
 			utils.RandomAddress().String(),
 		)
 		execId, err := f.ProposeJob(ctx, &execSpec)
